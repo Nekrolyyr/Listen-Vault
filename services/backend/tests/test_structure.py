@@ -63,6 +63,9 @@ def test_chapter_plan_merges_and_splits():
 
 def test_accept_rejects_bad_answers():
     assert chapters.accept("Summary: the model works well on all tasks", 3, 40) == "The model works well on all tasks."
+    assert chapters.accept("The keys K . and values  V , both", 3, 40) == "The keys K. and values V, both."
+    assert chapters.accept("We train it using the following regularization techniques:", 3, 40) is None
+    assert chapters.accept("We use layer normalization [1] and dropout [4, 7].", 3, 40) == "We use layer normalization and dropout."
     assert chapters.accept("yes", 3, 40) is None
     assert chapters.accept("the the the the the the the the the the", 3, 40) is None
     assert chapters.accept("Summarize the text above in two sentences", 3, 40) is None

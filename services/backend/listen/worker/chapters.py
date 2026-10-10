@@ -148,6 +148,10 @@ def accept(answer: str, min_words: int, max_words: int) -> str | None:
     """Return a cleaned LLM answer, or None if it looks unusable."""
     answer = answer.strip().strip('"').strip()
     answer = re.sub(r"^(?:summary|answer|title|overview)\s*:\s*", "", answer, flags=re.I)
+    answer = re.sub(r"\s?\[\s*\d+(?:\s*[-–,]\s*\d+)*\s*\]", "", answer)       # copied citation markers
+    answer = re.sub(r"\s+([,.;:!?])", r"\1", re.sub(r"\s+", " ", answer))  # "keys K ." -> "keys K."
+    if answer.endswith(":"):
+        return None  # a list lead-in ("...the following techniques:") is not a summary
     words = _words(answer)
     if len(words) < min_words:
         return None
