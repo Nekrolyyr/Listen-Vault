@@ -2,11 +2,12 @@
 .env
 *.env
 !*.env.example
-Docker/traefik/acme/
-Docker/authelia/secrets/
-Docker/authelia/users*.yml
+config/authelia/secrets/
+config/authelia/users*.yml
+config/authelia/db.sqlite3
+config/authelia/notification.txt
 
-# model weights and content
+# model weights and content (persistent data lives under /vault, not here)
 models/
 data/
 
