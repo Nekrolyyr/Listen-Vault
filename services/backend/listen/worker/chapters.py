@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from . import sentences
-from .docmodel import Document, Paragraph
+from .docmodel import Document, Paragraph, Section
 from .llm import LlmClient, LlmError
 
 log = logging.getLogger(__name__)
@@ -68,13 +68,39 @@ def _clean_title(title: str) -> str:
     return title[:1].upper() + title[1:] if title else title
 
 
+CONCLUSION = re.compile(r"^(?:[\dIVX]+(?:\.\d+)*\.?\s*)?(?:conclusions?|concluding remarks|summary and conclusions?)\b", re.I)
+
+
+def _main_text(sections):
+    """Drop appendix material: sections starting two or more pages after the conclusion section
+    (the reference list sits in between)."""
+    out, end_page = [], None
+    for s in sections:
+        page = next((p.page for p in s.paragraphs if p.page is not None), None)
+        if end_page is not None and page is not None and page >= end_page + 2:
+            break
+        if s.title and CONCLUSION.match(s.title):
+            # GROBID can attach appendix text/figures to the conclusion: cut at the first jump of 2+ pages
+            kept, last = [], None
+            for p in s.paragraphs:
+                if p.page is not None:
+                    if last is not None and p.page >= last + 2:
+                        break
+                    last = p.page
+                kept.append(p)
+            end_page = last
+            s = Section(title=s.title, level=s.level, paragraphs=kept)
+        out.append(s)
+    return out
+
+
 def plan(doc: Document) -> list[ChapterPlan]:
     """Chapter structure without any LLM call. Index 0 is the overview."""
     plans = [ChapterPlan(kind="overview", title="Overview", start_page=1)]
     if doc.abstract:
         plans.append(ChapterPlan(kind="chapter", title="Abstract", paragraphs=list(doc.abstract),
                                  start_page=doc.abstract[0].page))
-    for section in doc.sections:
+    for section in _main_text(doc.sections):
         if section.title and SKIP_TITLES.match(section.title):
             continue
         title = _clean_title(section.title) if section.title else ""

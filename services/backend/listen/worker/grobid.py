@@ -37,16 +37,16 @@ def wait_alive(base_url: str, timeout_s: float = 180) -> bool:
     return False
 
 
-def process_fulltext(base_url: str, pdf: Path, timeout_s: float = 600) -> bytes:
-    data = [
-        ("consolidateHeader", "0"),
-        ("consolidateCitations", "0"),
-        ("segmentSentences", "1"),
-        *[("teiCoordinates", t) for t in ("head", "p", "s", "figure", "formula")],
-    ]
+def process_fulltext(base_url: str, pdf: Path, timeout_s: float = 600, client: httpx.Client | None = None) -> bytes:
+    data = {
+        "consolidateHeader": "0",
+        "consolidateCitations": "0",
+        "segmentSentences": "1",
+        "teiCoordinates": ["head", "p", "s", "figure", "formula"],  # repeated form field
+    }
     try:
         with pdf.open("rb") as f:
-            resp = httpx.post(
+            resp = (client or httpx).post(
                 f"{base_url}/api/processFulltextDocument",
                 files={"input": (pdf.name, f, "application/pdf")},
                 data=data,
@@ -117,16 +117,35 @@ def _figure(fig) -> Paragraph | None:
     return Paragraph(text=f"{name}: {caption}", page=_page(fig), kind=kind)
 
 
+ORG_WORDS = re.compile(
+    r"\b(?:university|universit[äéà]t?|institute|institut|laborator(?:y|ies)|lab|department|dept|school|college|"
+    r"research|inc|ltd|corp|corporation|company|google|brain|deepmind|microsoft|meta|facebook|openai|amazon|"
+    r"ibm|nvidia|apple|centre|center|hospital|foundation)\b",
+    re.I,
+)
+
+
+def _clean_title(title: str) -> str:
+    """GROBID sometimes prefixes the title with front-matter text (licence notices, venue lines)."""
+    title = re.sub(r"\s+", " ", title).strip()
+    if len(title) > 150 and ". " in title:
+        last = title.rsplit(". ", 1)[1].strip()
+        if 1 <= len(last.split()) <= 25:
+            return last
+    return title
+
+
 def parse_tei(xml: bytes) -> Document:
     root = etree.fromstring(xml)
     doc = Document(source="grobid")
 
     title = root.find(".//t:teiHeader/t:fileDesc/t:titleStmt/t:title", NS)
-    doc.title = _text(title) if title is not None else ""
+    doc.title = _clean_title(_text(title)) if title is not None else ""
 
     for author in root.findall(".//t:teiHeader//t:sourceDesc/t:biblStruct/t:analytic/t:author/t:persName", NS):
         names = [_text(n) for n in author if n.tag in (f"{TEI}forename", f"{TEI}surname")]
-        if name := " ".join(n for n in names if n):
+        name = " ".join(n for n in names if n)
+        if name and not ORG_WORDS.search(name):  # affiliations occasionally land in persName
             doc.authors.append(name)
 
     date = root.find(".//t:teiHeader//t:publicationStmt/t:date", NS)

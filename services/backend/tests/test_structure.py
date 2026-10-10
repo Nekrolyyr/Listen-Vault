@@ -178,3 +178,56 @@ def test_pdf_fallback_drops_front_matter_before_abstract(tmp_path):
     doc = pdf_fallback.parse_pdf(pdf)
     assert [p.text for p in doc.abstract] == ["We did a thing and it worked."]
     assert [s.title for s in doc.sections] == ["1 Introduction"]
+
+
+def test_grobid_request_is_multipart_with_repeated_coordinates(tmp_path):
+    import httpx
+
+    seen = {}
+
+    def handler(request: httpx.Request):
+        seen["body"] = request.read()
+        seen["type"] = request.headers["content-type"]
+        return httpx.Response(200, content=(FIXTURES / "sample.tei.xml").read_bytes())
+
+    pdf = tmp_path / "x.pdf"
+    pdf.write_bytes(b"%PDF-1.4 test")
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    xml = grobid.process_fulltext("http://grobid", pdf, client=client)
+    assert grobid.parse_tei(xml).title.startswith("Sparse Attention")
+    assert seen["type"].startswith("multipart/form-data")
+    assert seen["body"].count(b'name="teiCoordinates"') == 5
+    assert b'name="input"; filename="x.pdf"' in seen["body"]
+
+
+def test_tei_title_and_author_cleanup():
+    assert grobid._clean_title(
+        "Provided proper attribution is provided, Google hereby grants permission to reproduce the tables and "
+        "figures in this paper solely for use in journalistic or scholarly works. Attention Is All You Need"
+    ) == "Attention Is All You Need"
+    assert grobid._clean_title("A Short Title. With a Subtitle") == "A Short Title. With a Subtitle"
+    assert grobid.ORG_WORDS.search("Google Brain") and not grobid.ORG_WORDS.search("Ashish Vaswani")
+
+
+def test_appendix_after_conclusion_is_skipped():
+    doc = Document(sections=[
+        Section(title="1 Introduction", paragraphs=[Paragraph("word " * 300, page=1)]),
+        Section(title="7 Conclusion", paragraphs=[Paragraph("word " * 300, page=10)]),
+        Section(title="Input-Input Layer5", paragraphs=[Paragraph("word " * 300, page=14)]),
+    ])
+    assert [p.title for p in chapters.plan(doc)] == ["Overview", "Introduction", "Conclusion"]
+    # without a conclusion heading nothing is dropped
+    doc.sections[1].title = "7 Discussion"
+    assert len(chapters.plan(doc)) == 4
+
+
+def test_appendix_figures_placed_in_conclusion_are_dropped():
+    doc = Document(sections=[
+        Section(title="1 Introduction", paragraphs=[Paragraph("word " * 300, page=1)]),
+        Section(title="7 Conclusion", paragraphs=[Paragraph("word " * 300, page=10),
+                                                  Paragraph("Figure 3: attention maps", page=13, kind="figure")]),
+        Section(title="Input-Input Layer5", paragraphs=[Paragraph("word " * 300, page=14)]),
+    ])
+    plans = chapters.plan(doc)
+    assert [p.title for p in plans] == ["Overview", "Introduction", "Conclusion"]
+    assert all(p.kind == "text" for p in plans[-1].paragraphs)
