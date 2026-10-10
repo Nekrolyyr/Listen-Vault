@@ -1,0 +1,17 @@
+# secrets and runtime state
+.env
+*.env
+!*.env.example
+Docker/traefik/acme/
+Docker/authelia/secrets/
+Docker/authelia/users*.yml
+
+# model weights and content
+models/
+data/
+
+# tooling
+__pycache__/
+*.pyc
+.venv/
+node_modules/
