@@ -43,11 +43,13 @@ services:
       - traefik.http.routers.listen-auth.entrypoints=websecure
       - traefik.http.routers.listen-auth.tls.certresolver=le
       - traefik.http.routers.listen-auth.middlewares=listen-security@docker
+      - traefik.http.routers.listen-auth.service=listen-auth
       - traefik.http.services.listen-auth.loadbalancer.server.port=9091
       # forwardAuth used by the api router below
       - traefik.http.middlewares.listen-authelia.forwardauth.address=http://listen-authelia:9091/auth/api/authz/forward-auth
       - traefik.http.middlewares.listen-authelia.forwardauth.trustForwardHeader=true
       - traefik.http.middlewares.listen-authelia.forwardauth.authResponseHeaders=Remote-User,Remote-Groups,Remote-Email,Remote-Name
+      - traefik.http.middlewares.listen-authelia.forwardauth.maxResponseBodySize=1048576
     # The authelia image ships its own HEALTHCHECK.
 
   api:
@@ -78,6 +80,7 @@ services:
       - traefik.http.routers.listen.entrypoints=websecure
       - traefik.http.routers.listen.tls.certresolver=le
       - traefik.http.routers.listen.middlewares=listen-authelia@docker,listen-proxy@docker,listen-security@docker
+      - traefik.http.routers.listen.service=listen
       - traefik.http.services.listen.loadbalancer.server.port=8000
       # Proves to the api that a request passed through Traefik (and therefore Authelia).
       - traefik.http.middlewares.listen-proxy.headers.customrequestheaders.X-Listen-Proxy=${LISTEN_PROXY_SECRET}
