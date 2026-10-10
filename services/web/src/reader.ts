@@ -225,6 +225,7 @@ export function readerView(id: string): View {
         renderText();
         if (follow && c?.start_page && pdf) pdf.showPage(c.start_page);
       },
+      onSentencesLoaded: () => renderText(),
       onSentence: (s, i) => {
         currentSentence = s;
         nowReading.replaceChildren(

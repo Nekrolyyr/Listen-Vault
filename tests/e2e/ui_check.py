@@ -43,7 +43,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(600)
 
     # ---- reader
-    page.locator(".doc-card", has_text="Attention").locator("a.btn").first.click()
+    page.locator(".doc-card", has_text="Attention Is All You Need").locator("a.btn").first.click()
     expect(page.locator(".reader-title h1")).to_be_visible()
     expect(page.locator(".pdfViewer .page canvas").first).to_be_visible(timeout=15_000)
     print("reader title:", page.locator(".reader-title h1").inner_text())
@@ -91,7 +91,7 @@ with sync_playwright() as p:
     overflow = m.evaluate("() => document.documentElement.scrollWidth > window.innerWidth")
     print("phone library horizontal overflow:", overflow)
     m.screenshot(path=OUT / "library-phone-dark.png", full_page=True)
-    m.locator(".doc-card", has_text="Attention").locator("a.btn").first.click()
+    m.locator(".doc-card", has_text="Attention Is All You Need").locator("a.btn").first.click()
     expect(m.locator(".pane-tabs")).to_be_visible()
     m.wait_for_timeout(2500)
     m.screenshot(path=OUT / "reader-phone-doc.png")

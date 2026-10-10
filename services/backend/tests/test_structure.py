@@ -250,3 +250,13 @@ def test_article_title_drops_host_name_and_skips_link_sections():
     doc = article.parse_html(html, "https://en.wikipedia.org/wiki/Sleep")
     assert doc.title == "How sleep consolidates memory"
     assert "See also" not in [p.title for p in chapters.plan(doc)]
+
+
+def test_article_strips_web_reference_markers():
+    html = ARTICLE.replace("strengthening some memories", "strengthening[12] some memories[citation needed]")
+    html = html.replace("<h2>What it means for people</h2>", "<ul><li>first point,</li><li>second point[3]</li></ul><h2>What it means for people</h2>")
+    doc = article.parse_html(html, "https://example.org/sleep")
+    texts = [p.text for s in doc.sections for p in s.paragraphs]
+    assert not any("[" in t for t in texts)
+    assert "first point." in texts and "second point." in texts
+    assert chapters.plan(doc)[0].start_page is None

@@ -96,7 +96,7 @@ def _main_text(sections):
 
 def plan(doc: Document) -> list[ChapterPlan]:
     """Chapter structure without any LLM call. Index 0 is the overview."""
-    plans = [ChapterPlan(kind="overview", title="Overview", start_page=1)]
+    plans = [ChapterPlan(kind="overview", title="Overview", start_page=None if doc.source == "trafilatura" else 1)]
     if doc.abstract:
         plans.append(ChapterPlan(kind="chapter", title="Abstract", paragraphs=list(doc.abstract),
                                  start_page=doc.abstract[0].page))

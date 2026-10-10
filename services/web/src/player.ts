@@ -3,6 +3,7 @@ import { api, type Chapter, type DocDetail, type Sentence } from "./api";
 
 export interface PlayerEvents {
   onChapter(idx: number): void;
+  onSentencesLoaded(idx: number): void; // timings for the current chapter arrived
   onSentence(sentence: Sentence | null, idx: number): void;
   onState(): void;
   onWaiting(idx: number | null): void; // next chapter not generated yet
@@ -75,6 +76,7 @@ export class Player {
       api.sentences(this.doc.id, idx).then((s) => {
         if (this.chapterIdx === idx) {
           this.sentences = s;
+          this.events.onSentencesLoaded(idx);
           this.tick(true);
         }
       });

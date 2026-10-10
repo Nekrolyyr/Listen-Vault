@@ -15,8 +15,11 @@ class ArticleError(Exception):
     pass
 
 
+WEB_REFS = re.compile(r"\[(?:\d+|[a-z]|citation needed|note \d+|clarification needed)\]", re.I)
+
+
 def _clean(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip()
+    return re.sub(r"\s+", " ", WEB_REFS.sub("", text)).strip()
 
 
 def parse_html(html: str, url: str | None = None) -> Document:
@@ -62,7 +65,7 @@ def parse_html(html: str, url: str | None = None) -> Document:
         elif tag == "list":
             for item in el.iter("item"):
                 if text := _clean("".join(item.itertext())):
-                    section.paragraphs.append(Paragraph(text=text if text[-1] in ".!?" else text + "."))
+                    section.paragraphs.append(Paragraph(text=text if text[-1] in ".!?" else text.rstrip(",;:") + "."))
     doc.sections = [s for s in doc.sections if s.paragraphs]
     if doc.title and doc.sections and doc.sections[0].paragraphs[0].text == doc.title:
         doc.sections[0].paragraphs.pop(0)
