@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TEI xml:space="preserve" xmlns="http://www.tei-c.org/ns/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<teiHeader xml:lang="en">
+		<fileDesc>
+			<titleStmt>
+				<title level="a" type="main">Sparse Attention Heads Carry Most of the Signal</title>
+			</titleStmt>
+			<publicationStmt>
+				<publisher>Example Press</publisher>
+				<availability status="unknown"><licence/></availability>
+				<date type="published" when="2024-05-02">2 May 2024</date>
+			</publicationStmt>
+			<sourceDesc>
+				<biblStruct>
+					<analytic>
+						<author>
+							<persName><forename type="first">Ada</forename><surname>Lovelace</surname></persName>
+							<affiliation key="aff0"><orgName type="institution">Analytical Institute</orgName></affiliation>
+						</author>
+						<author>
+							<persName><forename type="first">Alan</forename><forename type="middle">M</forename><surname>Turing</surname></persName>
+						</author>
+						<title level="a" type="main">Sparse Attention Heads Carry Most of the Signal</title>
+					</analytic>
+					<monogr><imprint><date/></imprint></monogr>
+				</biblStruct>
+			</sourceDesc>
+		</fileDesc>
+		<profileDesc>
+			<abstract>
+				<div xmlns="http://www.tei-c.org/ns/1.0"><p><s coords="1,72.0,300.1,450.2,9.0">We study how attention heads specialise during pre-training <ref type="bibr" target="#b0">[1]</ref>.</s><s coords="1,72.0,311.1,450.2,9.0">A small subset of heads accounts for most downstream gains.</s></p></div>
+			</abstract>
+		</profileDesc>
+	</teiHeader>
+	<text xml:lang="en">
+		<body>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="1" coords="1,72.0,400.0,100.0,10.0">Introduction</head><p coords="1,72.0,420.0,450.0,60.0"><s coords="1,72.0,420.0,450.0,9.0">Transformers dominate sequence modelling <ref type="bibr" target="#b1">(Vaswani et al., 2017)</ref>.</s><s coords="2,72.0,90.0,450.0,9.0">Prior work pruned heads by weight magnitude <ref type="bibr" target="#b2">[2,</ref><ref type="bibr" target="#b3">3]</ref>.</s><note place="foot" n="1">Code is available online.</note></p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2">Methods</head></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.1" coords="2,72.0,200.0,100.0,10.0">Data</head><p coords="2,72.0,220.0,450.0,30.0"><s coords="2,72.0,220.0,450.0,9.0">We use the standard benchmark with 12 tasks.</s></p><formula xml:id="formula_0" coords="2,72.0,260.0,300.0,20.0">L = -sum log p(x)</formula><p coords="2,72.0,290.0,450.0,30.0"><s coords="2,72.0,290.0,450.0,9.0">The loss is minimised with Adam.</s></p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3" coords="3,72.0,100.0,100.0,10.0">Results</head><p coords="3,72.0,120.0,450.0,30.0"><s coords="3,72.0,120.0,450.0,9.0">Removing five percent of heads reduces accuracy by 12 points.</s></p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4">Acknowledgements</head><p><s>We thank the reviewers.</s></p></div>
+			<figure xml:id="fig_0" coords="3,72.0,300.0,450.0,200.0"><head>Fig. 1 .</head><label>1</label><figDesc>Fig. 1. Accuracy as heads are removed.</figDesc></figure>
+		</body>
+		<back>
+			<div type="acknowledgement"><div><head>Acknowledgements</head><p>Funding thanks.</p></div></div>
+			<div type="references"><listBibl><biblStruct xml:id="b0"><analytic><title>Ref</title></analytic></biblStruct></listBibl></div>
+		</back>
+	</text>
+</TEI>

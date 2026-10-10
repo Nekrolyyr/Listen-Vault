@@ -1,0 +1,46 @@
+[project]
+name = "listen-vault"
+version = "0.1.0"
+description = "Scientific papers and articles to audio: api (foreground) and worker (background ML pipeline)"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.30",
+  "python-multipart>=0.0.9",
+  "psycopg[binary,pool]>=3.2",
+]
+
+[project.optional-dependencies]
+worker = [
+  "httpx>=0.27",
+  "lxml>=5.2",
+  "trafilatura>=2.0",
+  "pypdf>=5.0",
+  "pdfminer.six>=20240706",
+  "numpy>=1.26",
+  "onnxruntime>=1.19",
+  "kokoro-onnx>=0.4",
+  "piper-tts>=1.3",
+  "pyyaml>=6.0",
+]
+dev = [
+  "pytest>=8.0",
+  "httpx>=0.27",
+]
+
+[project.scripts]
+listen-api = "listen.api.main:run"
+listen-worker = "listen.worker.main:run"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["listen*"]
+
+[tool.setuptools.package-data]
+listen = ["migrations/*.sql"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,28 @@
+# Pronunciation lexicon applied before text-to-speech (exact, case-sensitive word matches).
+# Add entries for acronyms or names the voice gets wrong; the worker reads this file per job.
+words:
+  SARS-CoV-2: sars cov two
+  COVID-19: covid nineteen
+  CRISPR: crisper
+  mRNA: m R N A
+  LaTeX: lah tech
+  GitHub: git hub
+  arXiv: archive
+  PyTorch: pie torch
+  NumPy: num pie
+  SciPy: sigh pie
+  BERT: bert
+  GPT: G P T
+  LLM: L L M
+  LLMs: L L Ms
+  AUC: A U C
+  ROC: rock
+  RMSE: R M S E
+  ANOVA: a nova
+  IQR: I Q R
+  SD: S D
+  CI: C I
+  fMRI: f M R I
+  EEG: E E G
+  WHO: W H O
+  NASA: nasa
