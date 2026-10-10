@@ -1,0 +1,202 @@
+# listen-vault — papers and articles to audio, served at https://listen.vault.akiba-z.ch
+#
+# Foreground tier: authelia (login), api (FastAPI + SPA).
+# Background tier: worker (pipeline, OCR, TTS), llm (BLOOMZ-7b1 via llama.cpp), grobid.
+# No service publishes host ports; everything is reached through the shared Traefik.
+#
+# Before the first start: scripts/init-secrets.sh, scripts/add-user.sh, scripts/fetch-models.sh
+# (see README.md). Copy .env.example to .env and adjust.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql://listen:${POSTGRES_PASSWORD:?set in .env}@postgres:5432/listen
+  DATA_DIR: /data
+  TZ: Europe/Zurich
+
+services:
+  authelia:
+    image: authelia/authelia:4.39.28
+    container_name: listen-authelia
+    restart: unless-stopped
+    environment:
+      TZ: Europe/Zurich
+      X_AUTHELIA_CONFIG: /config/configuration.yml
+      AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE: /run/secrets/authelia_jwt
+      AUTHELIA_SESSION_SECRET_FILE: /run/secrets/authelia_session
+      AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE: /run/secrets/authelia_storage
+    secrets: [authelia_jwt, authelia_session, authelia_storage]
+    volumes:
+      - ./config/authelia/configuration.yml:/config/configuration.yml:ro
+      - ${LISTEN_CONFIG_DIR:-/vault/configs/listen-vault}/authelia:/var/lib/authelia
+    networks: [traefik, listen]
+    mem_limit: 256m
+    logging: *logging
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik
+      - traefik.http.routers.listen-auth.rule=Host(`listen.vault.akiba-z.ch`) && PathPrefix(`/auth`)
+      - traefik.http.routers.listen-auth.entrypoints=websecure
+      - traefik.http.routers.listen-auth.tls.certresolver=le
+      - traefik.http.routers.listen-auth.middlewares=listen-security@docker
+      - traefik.http.services.listen-auth.loadbalancer.server.port=9091
+      # forwardAuth used by the api router below
+      - traefik.http.middlewares.listen-authelia.forwardauth.address=http://listen-authelia:9091/auth/api/authz/forward-auth
+      - traefik.http.middlewares.listen-authelia.forwardauth.trustForwardHeader=true
+      - traefik.http.middlewares.listen-authelia.forwardauth.authResponseHeaders=Remote-User,Remote-Groups,Remote-Email,Remote-Name
+    # The authelia image ships its own HEALTHCHECK.
+
+  api:
+    build:
+      context: .
+      dockerfile: services/backend/Dockerfile
+      target: api
+    image: listen-vault/api:local
+    container_name: listen-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *backend-env
+      LISTEN_USER: ${LISTEN_USER:?set in .env}
+      LISTEN_PROXY_SECRET: ${LISTEN_PROXY_SECRET:?set in .env}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
+    volumes:
+      - ${LISTEN_DATA_DIR:-/vault/listen-vault}:/data
+    networks: [traefik, listen]
+    mem_limit: 512m
+    logging: *logging
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik
+      - traefik.http.routers.listen.rule=Host(`listen.vault.akiba-z.ch`)
+      - traefik.http.routers.listen.entrypoints=websecure
+      - traefik.http.routers.listen.tls.certresolver=le
+      - traefik.http.routers.listen.middlewares=listen-authelia@docker,listen-proxy@docker,listen-security@docker
+      - traefik.http.services.listen.loadbalancer.server.port=8000
+      # Proves to the api that a request passed through Traefik (and therefore Authelia).
+      - traefik.http.middlewares.listen-proxy.headers.customrequestheaders.X-Listen-Proxy=${LISTEN_PROXY_SECRET}
+      - traefik.http.middlewares.listen-security.headers.stsSeconds=31536000
+      - traefik.http.middlewares.listen-security.headers.frameDeny=true
+      - traefik.http.middlewares.listen-security.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.listen-security.headers.referrerPolicy=same-origin
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  worker:
+    build:
+      context: .
+      dockerfile: services/backend/Dockerfile
+      target: worker
+    image: listen-vault/worker:local
+    container_name: listen-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      llm:
+        condition: service_started
+      grobid:
+        condition: service_started
+    environment:
+      <<: *backend-env
+      MODELS_DIR: /models
+      LLM_URL: http://llm:8080
+      GROBID_URL: http://grobid:8070
+      TTS_THREADS: ${TTS_THREADS:-8}
+      OCR_JOBS: ${OCR_JOBS:-8}
+    volumes:
+      - ${LISTEN_DATA_DIR:-/vault/listen-vault}:/data
+      - ${LISTEN_CONFIG_DIR:-/vault/configs/listen-vault}/models:/models:ro
+      - ./config/normalizer:/app/config/normalizer:ro
+    networks: [listen]
+    mem_limit: 2560m
+    cpus: 14
+    logging: *logging
+
+  llm:
+    image: ghcr.io/ggml-org/llama.cpp:server-b11515
+    container_name: listen-llm
+    restart: unless-stopped
+    command:
+      - --model
+      - /models/llm/bloomz-7b1-Q4_K_M.gguf
+      - --ctx-size
+      - "2048"
+      - --threads
+      - ${LLM_THREADS:-8}
+      - --threads-batch
+      - ${LLM_THREADS_BATCH:-8}
+      - --parallel
+      - "1"
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --no-webui
+    volumes:
+      - ${LISTEN_CONFIG_DIR:-/vault/configs/listen-vault}/models:/models:ro
+    networks: [listen]
+    mem_limit: 6g
+    cpus: 14
+    logging: *logging
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+
+  grobid:
+    image: grobid/grobid:0.8.2.1-crf
+    container_name: listen-grobid
+    restart: unless-stopped
+    environment:
+      JAVA_OPTS: -Xmx2g
+    networks: [listen]
+    mem_limit: 3g
+    cpus: 4
+    logging: *logging
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: listen-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: listen
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: listen
+      TZ: Europe/Zurich
+    volumes:
+      - ${LISTEN_CONFIG_DIR:-/vault/configs/listen-vault}/postgres:/var/lib/postgresql/data
+    networks: [listen]
+    mem_limit: 512m
+    logging: *logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U listen -d listen"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+secrets:
+  authelia_jwt:
+    file: ${LISTEN_CONFIG_DIR:-/vault/configs/listen-vault}/authelia/secrets/jwt
+  authelia_session:
+    file: ${LISTEN_CONFIG_DIR:-/vault/configs/listen-vault}/authelia/secrets/session
+  authelia_storage:
+    file: ${LISTEN_CONFIG_DIR:-/vault/configs/listen-vault}/authelia/secrets/storage
+
+networks:
+  traefik:
+    external: true
+  listen:
+    name: listen
