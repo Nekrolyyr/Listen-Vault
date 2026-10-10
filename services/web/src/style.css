@@ -89,9 +89,9 @@ button, input, select { font: inherit; color: inherit; }
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border);
 }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 650; color: var(--text); text-decoration: none; letter-spacing: -0.01em; }
+.brand { display: flex; align-items: center; gap: 10px; white-space: nowrap; font-weight: 650; color: var(--text); text-decoration: none; letter-spacing: -0.01em; }
 .topbar nav { display: flex; gap: 4px; }
-.topbar nav a { padding: 6px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; }
+.topbar nav a { white-space: nowrap; padding: 6px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; }
 .topbar nav a:hover { background: var(--surface-2); color: var(--text); }
 .topbar nav a.active { color: var(--text); background: var(--surface-2); }
 .content { max-width: 1440px; margin: 0 auto; padding: 24px 16px 48px; }
@@ -191,7 +191,7 @@ a.doc-title:hover { text-decoration: underline; }
 /* ---------------------------------------------------------------- reader */
 .content:has(.reader) { max-width: none; padding: 0; }
 .reader {
-  display: grid; grid-template-rows: auto auto 1fr auto;
+  display: grid; grid-template-rows: auto auto 1fr auto; grid-template-columns: minmax(0, 1fr);
   height: calc(100dvh - var(--topbar));
 }
 .reader-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
@@ -280,6 +280,11 @@ a.doc-title:hover { text-decoration: underline; }
 }
 @media (max-width: 600px) {
   .content { padding: 16px 16px 40px; }
+  .topbar { gap: 8px; }
+  .topbar nav a { padding: 6px 8px; }
+}
+@media (max-width: 400px) {
+  .brand-name { display: none; }
   .doc-card { grid-template-columns: 1fr auto; padding: 14px; }
   .doc-icon { display: none; }
   .url-form { flex-wrap: wrap; }

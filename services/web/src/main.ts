@@ -22,7 +22,7 @@ function shell(view: View, active: string): HTMLElement {
     h(
       "header",
       { class: "topbar" },
-      h("a", { href: "/", "data-link": true, class: "brand" }, h("img", { src: "/favicon.svg", alt: "", width: 24, height: 24 }), "Listen Vault"),
+      h("a", { href: "/", "data-link": true, class: "brand" }, h("img", { src: "/favicon.svg", alt: "", width: 24, height: 24 }), h("span", { class: "brand-name" }, "Listen Vault")),
       h("nav", {}, link("/", "Library"), link("/settings", "Settings"), h("a", { href: "/auth/logout", class: "quiet" }, "Sign out")),
     ),
     h("main", { class: "content" }, view.el),

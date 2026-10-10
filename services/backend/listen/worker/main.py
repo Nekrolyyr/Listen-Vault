@@ -100,7 +100,8 @@ class Worker:
 def run() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("phonemizer").setLevel(logging.ERROR)  # espeak "words count mismatch" noise
+    # phonemizer resets its level on every call; a filter survives that. The warning is harmless.
+    logging.getLogger("phonemizer").addFilter(lambda r: "words count mismatch" not in r.getMessage())
     settings = config.load()
     db.wait_for_db(settings.database_url)
     db.migrate(settings.database_url)

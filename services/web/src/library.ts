@@ -139,7 +139,7 @@ export function libraryView(): View {
     return h(
       "li",
       { class: `doc-card${doc.listened ? " listened" : ""}` },
-      h("div", { class: "doc-icon", "aria-hidden": "true" }, icon(doc.source_type === "pdf" ? "doc" : "globe")),
+      h("div", { class: "doc-icon", "aria-hidden": "true" }, icon(doc.has_pdf ? "doc" : "globe")),
       h(
         "div",
         { class: "doc-main" },
