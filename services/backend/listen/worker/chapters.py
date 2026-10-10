@@ -26,7 +26,7 @@ CHUNK_TOKENS = 1200  # input budget per LLM call (context is 2,048 incl. prompt 
 SKIP_TITLES = re.compile(
     r"^(?:[\dIVX]+(?:\.\d+)*\.?\s*)?(?:acknowledge?ments?|funding|author contributions?|competing interests?|"
     r"conflicts? of interest|declarations?|data availability|code availability|ethics|supplementary|"
-    r"references|bibliography|abbreviations|appendix|open access)\b",
+    r"references|bibliography|abbreviations|appendix|open access|see also|external links|further reading|notes)\b",
     re.I,
 )
 
@@ -170,6 +170,16 @@ def _words(s: str) -> list[str]:
     return re.findall(r"[A-Za-z0-9']+", s.lower())
 
 
+IMPERATIVES = {
+    "define", "explain", "review", "look", "understand", "learn", "describe", "discuss", "identify",
+    "list", "compare", "write", "read", "note", "consider", "explore", "examine", "find", "use", "see",
+    "visualize", "visualise", "combine", "apply", "align", "calculate", "compute", "implement", "train",
+    "build", "create", "show", "plot", "analyze", "analyse", "evaluate", "measure", "test", "add", "remove",
+    "replace", "run", "try", "take", "make", "give", "get", "set", "check", "choose", "select", "follow",
+    "start", "keep", "avoid", "remember", "think", "imagine", "let", "suppose", "assume", "recall",
+}
+
+
 def accept(answer: str, min_words: int, max_words: int) -> str | None:
     """Return a cleaned LLM answer, or None if it looks unusable."""
     answer = answer.strip().strip('"').strip()
@@ -185,6 +195,9 @@ def accept(answer: str, min_words: int, max_words: int) -> str | None:
         return None  # repetition loop
     if re.search(r"summari[sz]e|the text above|write a short", answer, re.I):
         return None  # echoed the instruction
+    firsts = [s.split()[0].lower() for s in sentences.split(answer) if s.split()]
+    if firsts and sum(w in IMPERATIVES for w in firsts) * 2 >= len(firsts):
+        return None  # study objectives ("Define X. Explain Y.") instead of a summary
     if len(words) > max_words:
         kept = sentences.split(answer)
         answer = ""

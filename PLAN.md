@@ -40,7 +40,7 @@ Every user requirement, and where the plan covers it.
 | LLM | **BLOOMZ-7b1** (`bigscience/bloomz-7b1`, instruction-tuned BLOOM 7.1B, BLOOM RAIL 1.0 license) |
 | TTS | **Kokoro-82M** (ONNX, Apache-2.0) as default; **Piper** (GPL-3.0, accepted) as fallback |
 | Language | English only |
-| Hardware | 16 cores, 16 GB RAM for this stack (host has 30 GB total and also runs Plex, Jellyfin, Nextcloud) |
+| Hardware | AMD Ryzen 7 3800X: 8 physical cores / 16 threads, 16 GB RAM for this stack (host has 30 GB and also runs Plex, Jellyfin, Nextcloud) |
 | Location | `/home/doctor/docker/listen-vault`, managed by Dockge like the other stacks |
 | Persistent data | `/vault/configs/listen-vault/` (config, database, models) and `/vault/listen-vault/` (PDFs, text, audio), matching the existing `/vault/configs/<app>` convention |
 
@@ -50,17 +50,17 @@ Each container gets a `mem_limit` in Compose. The pipeline runs **one heavy stag
 
 | Container | Memory limit | Threads | Notes |
 |---|---|---|---|
-| llm (llama.cpp, BLOOMZ-7b1 Q4_K_M) | 6 GB | 14 (configurable) | ~5 GB resident. Fallback runtime needs 8 GB (see §6.4). |
-| worker (OCR, normalization, Kokoro ONNX, ffmpeg) | 2.5 GB | 14 (configurable) | Kokoro ~0.5–1 GB, Tesseract during OCR |
+| llm (llama.cpp, BLOOMZ-7b1 Q4_K_M) | 6 GB | 8 (measured fastest) | 4.4 GiB model |
+| worker (OCR, normalization, Kokoro ONNX, ffmpeg) | 2.5 GB | 8 (measured fastest) | Kokoro ~0.5–1 GB, Tesseract during OCR |
 | grobid (CRF-only image, `-Xmx2g`) | 3 GB | 4 | The deep-learning GROBID image is heavier; the CRF image is enough for section structure |
 | postgres | 0.5 GB | shared | also the job queue (§5) |
 | api (FastAPI, serves the SPA) | 0.5 GB | shared | |
 | authelia | 0.25 GB | shared | |
 | **Total limits** | **~12.75 GB** | | ~3 GB headroom inside the 16 GB |
 
-Two cores are left for the rest of the host by default. Thread counts are tuned after the benchmark (phase 1).
+Threads default to 8, the physical core count: in phase 1 both llama.cpp and Kokoro were slower at 14 threads (SMT). This also leaves headroom for the other stacks.
 
-Rough throughput, to be replaced by measured numbers in phase 1: a 20-page paper (~10,000 words, ~65 min of speech) should take a few minutes for chaptering and roughly 20–40 minutes for TTS on 14 threads. The only published CPU figure for Kokoro is a real-time factor of ~0.57 on 4 cores; scaling to 14 threads is an assumption.
+Measured (see `docs/benchmarks.md`): Kokoro RTF 0.23, BLOOMZ 58 tok/s prompt / 5.7 tok/s generation. A 15-page paper took ~30 s for GROBID, ~3.5 min for chaptering and ~12 min to synthesize ~35 min of speech.
 
 ## 4. Architecture
 
@@ -82,7 +82,7 @@ FOREGROUND tier                         BACKGROUND tier (all ML, CPU only)
            - library CRUD, uploads, URLs           2 structure    (GROBID | trafilatura)
            - job status                            3 chapter      (llm: BLOOMZ-7b1)
            - PDF + audio streaming (Range)         4 normalize    (speech text rules)
-           - playback position                     5 synthesize   (Kokoro ONNX → Opus)
+           - playback position                     5 synthesize   (Kokoro ONNX → AAC)
   authelia passkey login                  llm      llama.cpp server (OpenAI-compatible API)
                                           grobid   PDF → TEI XML with coordinates
   postgres metadata, jobs, playback       shared volumes: /vault/listen-vault/{pdf,text,audio}
@@ -93,7 +93,7 @@ Rules:
 - **No host ports** on any container. Traffic arrives only through Traefik, so nothing can skip Authelia from the LAN. (Several existing stacks publish ports; this one deliberately does not.)
 - Services on both networks carry `traefik.docker.network=traefik`. Without it, Traefik may pick the wrong network, which is one cause of the 504s documented in `docs/troubleshooting-gateway-timeouts.md`.
 - **Defense in depth:** other stacks share the `traefik` network and could reach `api` directly with a forged `Remote-User` header. A Traefik `headers` middleware therefore adds a secret `X-Listen-Proxy` header, and `api` rejects requests without it.
-- **Streaming:** PDFs and Opus files are served with HTTP Range (206) so the browser can seek. Uploads are capped at 100 MB in `api`. Traefik v2.11 has a 60 s default read timeout on entrypoints. If very slow uploads hit it, the fix belongs in the shared Traefik config, which affects all stacks and needs your approval first.
+- **Streaming:** PDFs and audio files are served with HTTP Range (206) so the browser can seek. Uploads are capped at 100 MB in `api`. Traefik v2.11 has a 60 s default read timeout on entrypoints. If very slow uploads hit it, the fix belongs in the shared Traefik config, which affects all stacks and needs your approval first.
 - **Outbound access:** the worker fetches article URLs, so the `listen` network needs internet access. The fetcher blocks private and internal IP ranges, so a submitted URL cannot be used to probe the other containers (SSRF guard).
 
 ## 5. Job model
@@ -128,8 +128,8 @@ BLOOMZ-7b1 has a 2,048-token context window and tends to give short answers. The
 - **Untitled article sections** get a short title from the LLM.
 - **Output checks:** each LLM output is checked for length, repetition and leftover prompt text. One retry with a stricter prompt, then an **extractive fallback** (abstract or first sentences), so a job never fails because of the LLM.
 
-**Runtime:** llama.cpp server with a GGUF converted from `bigscience/bloomz-7b1` (`convert_hf_to_gguf.py`, then Q4_K_M). Phase 1 must confirm that current llama.cpp loads BLOOM. My research did not confirm this.
-**Fallback runtime:** CTranslate2 int8, which supports BLOOM, at about 7.5 GB RAM. It still fits if the llm limit goes up to 8 GB (total ~14.75 GB). Plain Transformers in bf16 needs ~14 GB for the model alone and does not fit.
+**Runtime (confirmed in phase 1):** llama.cpp has the BLOOM architecture; `bigscience/bloomz-7b1` converts with `convert_hf_to_gguf.py` and quantizes to Q4_K_M (4.4 GiB). The CTranslate2 fallback is not needed.
+**Observed quality:** intros are mostly accurate and short; occasionally a detail is wrong (one invented figure in 16 chapters of the test paper). They are labelled as model-written summaries in the settings.
 
 ## 7. Speech
 
@@ -145,7 +145,7 @@ Before TTS, a rule-based normalizer rewrites scientific notation so that it read
 - **Kokoro-82M via `kokoro-onnx`** (ONNX Runtime, CPU). English voices (American and British), selectable in settings. The default voice is picked in phase 1 by listening.
 - Text is synthesized **per sentence** and joined with short pauses. Each chapter starts with its title and intro.
 - **Piper** is the fallback engine (faster, lower quality). It can be switched per job.
-- Output: per chapter, mono **Opus** at ~48 kbps via ffmpeg (about 20 MB per hour). Sentence start times are stored, so the reader can highlight the current sentence and follow the PDF page.
+- Output: per chapter, mono **AAC** (.m4a, 64 kbps, ~29 MB per hour) via ffmpeg. Changed from Opus because Ogg Opus does not play everywhere on iOS Safari; AAC plays in every current browser. Sentence start times are stored, so the reader can highlight the current sentence and follow the PDF page.
 
 ## 8. User interface
 
@@ -187,18 +187,20 @@ Stack: Vite + TypeScript SPA, built into static files that `api` serves (same or
     authelia/configuration.yml           # secrets/ and users file are git-ignored
     normalizer/lexicon.yaml              # pronunciation lexicon
   services/
-    api/                                 # FastAPI + built SPA
-    worker/                              # pipeline stages
+    backend/                             # one Python package "listen": api (foreground) + worker (background)
+      Dockerfile                         # targets: api (with the built SPA), worker (ffmpeg, Tesseract)
+      listen/api/  listen/worker/  tests/
     web/                                 # SPA source (Vite + TypeScript)
-  scripts/
-    fetch-models.sh                      # downloads and converts BLOOMZ, Kokoro, Piper voices
+  scripts/                               # init-secrets, add-user, fetch-models, backup, restore
+  tests/e2e/                             # browser checks: passkey login, UI
   docs/
     benchmarks.md                        # phase 1 results
+    samples/                             # voice samples
 ```
 
 Data stays outside the repo:
 - `/vault/configs/listen-vault/{authelia,postgres,models}`
-- `/vault/listen-vault/{pdf,text,audio}`
+- `/vault/listen-vault/docs/<id>/` (source and viewer PDF, structure, chapters, audio)
 
 ## 11. Phases and progress
 
@@ -207,29 +209,48 @@ Each phase ends with a commit (prefixes `docs:`, `feat:`, `infra:`, `fix:`, `cho
 - [x] Research and initial plan
 - [x] Project folder and Git repository, moved into `/home/doctor/docker`
 - [x] Plan validated against all user inputs and the existing host setup
-- [ ] **1. Benchmark spike:** convert BLOOMZ-7b1 to GGUF and confirm llama.cpp loads it (else CTranslate2). Measure tokens/s, Kokoro RTF on 14 threads, peak RAM, and GROBID on 3 sample papers (one scanned). Pick a voice. Write up in `docs/benchmarks.md`.
-- [ ] **2. Stack skeleton and login:** `compose.yaml`, networks, memory limits, Authelia with passkey on `/auth`, forwardAuth and proxy-secret header, a placeholder page behind login, reachable over HTTPS.
-- [ ] **3. Data layer:** Postgres schema (documents, chapters, sentences, jobs, playback), migrations, api skeleton with the auth checks.
-- [ ] **4. Ingestion:** upload and URL intake, OCR detection, GROBID, trafilatura, clean-up, page map. Tests on sample papers.
-- [ ] **5. Chaptering:** llm service, prompts, output checks, extractive fallback.
-- [ ] **6. Speech:** normalizer with unit tests, Kokoro synthesis, Opus encoding, sentence timings, Piper fallback.
-- [ ] **7. API:** library CRUD, job status, Range streaming for PDF and audio, playback position.
-- [ ] **8. Frontend:** library, add flow, reader with PDF.js sync, player, mobile layout.
-- [ ] **9. Hardening:** healthchecks, restart policies, backup of Postgres and `/vault/listen-vault`, upload limits, job retries, log rotation.
-- [ ] **10. End-to-end:** one born-digital paper, one scanned paper and one article URL, from upload to playback with PDF sync, logging in from a fresh browser with a passkey.
+- [x] **1. Benchmark spike:** BLOOMZ-7b1 → GGUF Q4_K_M works in llama.cpp; Kokoro, Piper, threads, voice samples. `docs/benchmarks.md`
+- [x] **2. Stack skeleton and login:** `compose.yaml` validates; Authelia config passes `validate-config`; labels tested through native Traefik + Authelia
+- [x] **3. Data layer:** schema, migrations, Postgres job queue
+- [x] **4. Ingestion:** upload/URL intake, SSRF guard, OCR, GROBID + pdfminer fallback, trafilatura, page map
+- [x] **5. Chaptering:** BLOOMZ intros/overview, checked answers, extractive fallback
+- [x] **6. Speech:** normalizer, Kokoro/Piper, AAC, sentence timings
+- [x] **7. API:** library, jobs, Range streaming, playback, settings
+- [x] **8. Frontend:** library, reader with PDF.js sync, player, settings, phone layout, dark mode
+- [x] **9. Hardening:** healthchecks, restart policies, memory/CPU limits, log rotation, retries, upload limits, backup/restore
+- [x] **10. End-to-end (natively, without Docker):** born-digital arXiv paper, scanned PDF, article URL; passkey login 11/11
+- [ ] **Deploy with Docker on the host:** needs docker access and the items in §12 (not possible from this session)
 
-## 12. Needed from you before phase 2
+### How it was verified
+
+There was no Docker access in the implementation session, so every service ran natively from its
+real artifact:
+- llama.cpp, built from source with the same flags as the `llm` service.
+- GROBID 0.8.2, unpacked from the pinned `grobid/grobid:0.8.2.1-crf` image.
+- Authelia 4.39.28 and Traefik 2.11.58, from their release binaries.
+- Tesseract 5.5, from the distro packages.
+- PostgreSQL 16, via pgserver.
+
+The Docker images themselves (`services/backend/Dockerfile`) have not been built yet. That is the
+first thing to watch on deployment.
+
+## 12. Needed from you before deployment
 
 1. **DNS:** `listen.vault.akiba-z.ch` does not resolve yet, and there is no wildcard for `*.vault.akiba-z.ch`. Add an A record to `144.2.97.77` (the address `jelly.vault.akiba-z.ch` resolves to) or a CNAME to `jelly.vault.akiba-z.ch`. Let's Encrypt's HTTP challenge needs it.
 2. **Data folders:** `/vault` is owned by root. Run once:
    `sudo mkdir -p /vault/configs/listen-vault /vault/listen-vault && sudo chown -R doctor:doctor /vault/configs/listen-vault /vault/listen-vault`
-3. **Login policy:** passkey + password (recommended) or passkey only.
+3. **Login policy:** the stack ships with passkey + password (`two_factor`). Switch to `one_factor` for passkey only (README).
+4. **Docker access:** add your user to the `docker` group (`sudo usermod -aG docker doctor`) or use `sudo docker compose`.
 
-## 13. Verify during implementation
+## 13. Resolved during implementation
 
-- llama.cpp support for the BLOOM architecture (phase 1). Fallback: CTranslate2 int8.
-- The exact Authelia 4.39 setting for passkey login and the subpath portal setup (phase 2).
-- Kokoro's real-time factor on this CPU at 14 threads (phase 1).
+- llama.cpp supports BLOOM; no CTranslate2 fallback needed.
+- Authelia 4.39.28: `webauthn.enable_passkey_login` is the setting; the `/auth` subpath portal works
+  with forwardAuth; passkey sign-in followed by the password (`two_factor`) passes end to end.
+- Kokoro: RTF 0.23 at 8 threads (14 threads is slower on this CPU).
+- Audio format changed from Opus to AAC for iOS Safari.
+- `services/api` + `services/worker` became one package `services/backend` with two image targets,
+  and the web app is served by the api (one container fewer).
 
 ## Sources
 

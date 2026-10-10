@@ -66,6 +66,9 @@ def test_accept_rejects_bad_answers():
     assert chapters.accept("The keys K . and values  V , both", 3, 40) == "The keys K. and values V, both."
     assert chapters.accept("We train it using the following regularization techniques:", 3, 40) is None
     assert chapters.accept("We use layer normalization [1] and dropout [4, 7].", 3, 40) == "We use layer normalization and dropout."
+    assert chapters.accept("Define attention mechanisms. Explain how attention works. Review the architecture.", 3, 40) is None
+    assert chapters.accept("Attention weighs inputs. Explain-style words inside are fine.", 3, 40) is not None
+    assert chapters.accept("Visualize attention maps. Combine attention across layers. Apply CNN visualizers.", 3, 40) is None
     assert chapters.accept("yes", 3, 40) is None
     assert chapters.accept("the the the the the the the the the the", 3, 40) is None
     assert chapters.accept("Summarize the text above in two sentences", 3, 40) is None
@@ -231,3 +234,19 @@ def test_appendix_figures_placed_in_conclusion_are_dropped():
     plans = chapters.plan(doc)
     assert [p.title for p in plans] == ["Overview", "Introduction", "Conclusion"]
     assert all(p.kind == "text" for p in plans[-1].paragraphs)
+
+
+def test_article_title_drops_site_name():
+    html = ARTICLE.replace("<title>How sleep consolidates memory</title>",
+                           '<title>How sleep consolidates memory - Science Daily</title>'
+                           '<meta property="og:site_name" content="Science Daily">')
+    assert article.parse_html(html, "https://example.org/sleep").title == "How sleep consolidates memory"
+
+
+def test_article_title_drops_host_name_and_skips_link_sections():
+    html = ARTICLE.replace("<title>How sleep consolidates memory</title>",
+                           "<title>How sleep consolidates memory - Wikipedia</title>")
+    html = html.replace("</article>", "<h2>See also</h2><p>" + "Other sleep pages are listed here for you. " * 30 + "</p></article>")
+    doc = article.parse_html(html, "https://en.wikipedia.org/wiki/Sleep")
+    assert doc.title == "How sleep consolidates memory"
+    assert "See also" not in [p.title for p in chapters.plan(doc)]

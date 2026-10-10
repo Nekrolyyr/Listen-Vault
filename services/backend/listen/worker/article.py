@@ -29,13 +29,16 @@ def parse_html(html: str, url: str | None = None) -> Document:
         include_images=False,
         include_links=False,
         with_metadata=True,
-        favor_precision=True,
-    )
+    )  # default mode: favor_precision drops headings on pages like Wikipedia
     if not xml:
         raise ArticleError("No readable article text found on this page")
     root = etree.fromstring(xml.encode())
     doc = Document(source="trafilatura")
     doc.title = _clean(root.get("title") or "")
+    # "Attention - Wikipedia" -> "Attention": drop a trailing site name (sitename or host name)
+    host = (root.get("hostname") or "").removeprefix("www.").split(".")[0]
+    for site in filter(None, (_clean(root.get("sitename") or ""), host)):
+        doc.title = re.sub(rf"\s+[-–—|·:]\s+{re.escape(site)}$", "", doc.title, flags=re.I) or doc.title
     if author := root.get("author"):
         doc.authors = [a.strip() for a in re.split(r";|\band\b|,(?=\s*[A-Z])", author) if a.strip()]
     doc.published = root.get("date") or None
