@@ -170,3 +170,15 @@ def test_orphan_sweep(settings, pool):
     (settings.docs_dir / "not-a-uuid").mkdir()
     assert worker.sweep_orphans() == 1
     assert not stray.root.exists() and (settings.docs_dir / "not-a-uuid").exists()
+
+
+def test_unpronounceable_fragments_are_dropped():
+    from listen.worker import chapters as ch
+    from listen.worker.docmodel import Paragraph
+    from listen.worker.normalize import Normalizer
+    from listen.worker.pipeline import chapter_segments
+
+    plan = ch.ChapterPlan(kind="chapter", title="Results", paragraphs=[Paragraph("It works. Done.", 3), Paragraph("]", 3), Paragraph("* †", 4)])
+    segs = chapter_segments(plan, Normalizer(), intros=False)
+    assert [s.display for s in segs] == ["Results", "It works.", "Done."]
+    assert Normalizer()("It works. ] * Done †.") == "It works. Done."

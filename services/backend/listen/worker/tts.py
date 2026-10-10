@@ -45,7 +45,11 @@ class KokoroEngine:
         self.speed = speed
 
     def synth(self, text: str) -> np.ndarray:
-        samples, rate = self.kokoro.create(text, voice=self.voice, speed=self.speed, lang=self.lang)
+        try:
+            samples, rate = self.kokoro.create(text, voice=self.voice, speed=self.speed, lang=self.lang)
+        except ValueError as e:  # "Nothing to synthesize": text without any pronounceable phonemes
+            log.warning("skipping unpronounceable text %r: %s", text[:80], e)
+            return np.zeros(0, np.float32)
         assert rate == self.sample_rate
         return samples.astype(np.float32)
 

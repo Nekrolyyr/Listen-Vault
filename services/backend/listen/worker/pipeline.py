@@ -183,7 +183,7 @@ class Pipeline:
 
     def _structure_pdf(self, pdf: Path) -> Document:
         base = self.settings.grobid_url
-        if grobid.wait_alive(base, timeout_s=180):
+        if grobid.wait_alive(base, timeout_s=self.settings.grobid_wait_s):
             try:
                 doc = grobid.parse_tei(grobid.process_fulltext(base, pdf))
                 if doc.sections:
@@ -203,7 +203,7 @@ class Pipeline:
             plans = chapters.load(paths.chapters)
         else:
             plans = chapters.plan(doc)
-            llm = self.llm if self.llm is not None and self.llm.wait_ready(300) else None
+            llm = self.llm if self.llm is not None and self.llm.wait_ready(self.settings.llm_wait_s) else None
             if llm is None:
                 log.warning("LLM not available; chapter intros and overview will be extractive")
             enricher = chapters.Enricher(llm, self._progress(job["id"], "chapters"))
@@ -295,7 +295,7 @@ def overview_segments(doc: Document, overview: chapters.ChapterPlan, normalizer:
     segs.append(_heading("Overview", 1, normalizer))
     if overview.intro:
         segs += _sentences(overview.intro, None, normalizer)
-    return segs
+    return [s for s in segs if re.search(r"[A-Za-z0-9]", s.spoken)]
 
 
 def chapter_segments(plan: chapters.ChapterPlan, normalizer: Normalizer, intros: bool) -> list[Segment]:
@@ -313,4 +313,4 @@ def chapter_segments(plan: chapters.ChapterPlan, normalizer: Normalizer, intros:
             segs.append(Segment(p.text, normalizer(f"{name}. {caption}"), p.page, "paragraph"))
         else:
             segs += _sentences(p.text, p.page, normalizer)
-    return [s for s in segs if s.spoken.strip()]
+    return [s for s in segs if re.search(r"[A-Za-z0-9]", s.spoken)]  # drop stray "]" or "*" fragments

@@ -100,6 +100,7 @@ class Worker:
 def run() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("phonemizer").setLevel(logging.ERROR)  # espeak "words count mismatch" noise
     settings = config.load()
     db.wait_for_db(settings.database_url)
     db.migrate(settings.database_url)

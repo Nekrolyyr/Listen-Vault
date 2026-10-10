@@ -99,7 +99,7 @@ def parse_pdf(pdf: Path) -> Document:
                 or (ln.page == 1 and ln.size == title_size and doc.title)):
             continue
         words = len(text.split())
-        is_heading = words <= 15 and not text.endswith(".") and (
+        is_heading = words <= 15 and not text.endswith(".") and len(re.findall(r"[A-Za-z]", text)) >= 3 and (
             ln.size >= body_size + 1.0 or (NUMBERED_HEADING.match(text) and ln.size >= body_size - 0.1)
         )
         if ABSTRACT.match(text) and not doc.sections and (words <= 2 or ln.size >= body_size):
@@ -130,4 +130,11 @@ def parse_pdf(pdf: Path) -> Document:
     flush()
 
     doc.sections = [s for s in doc.sections if s.paragraphs]
+    # A heading "Abstract" among the first sections: use it as the abstract and drop the front matter
+    # before it (author block, affiliations, licence notices).
+    for i, s in enumerate(doc.sections[:4]):
+        if not doc.abstract and s.title and ABSTRACT.fullmatch(s.title) and s.paragraphs[0].page in (1, 2):
+            doc.abstract = s.paragraphs
+            doc.sections = doc.sections[i + 1:]
+            break
     return doc

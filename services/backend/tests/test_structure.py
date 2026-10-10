@@ -162,3 +162,16 @@ def test_parse_article():
     assert [s.title for s in doc.sections] == [None, "The replay hypothesis", "What it means for people"]
     assert doc.sections[1].paragraphs[0].text.startswith("Researchers recorded neurons")
     assert "Copyright" not in " ".join(p.text for s in doc.sections for p in s.paragraphs)
+
+
+def test_pdf_fallback_drops_front_matter_before_abstract(tmp_path):
+    from listen.worker import pdf_fallback
+
+    pdf = make_pdf(tmp_path / "paper.pdf", [
+        [(20, "Big Title Here"), (10, "Provided proper attribution is given, permission is granted"),
+         (14, "Abstract"), (10, "We did a thing and it worked."), (14, "1 Introduction"), (10, "Intro text here."),
+         (14, "X")],
+    ])
+    doc = pdf_fallback.parse_pdf(pdf)
+    assert [p.text for p in doc.abstract] == ["We did a thing and it worked."]
+    assert [s.title for s in doc.sections] == ["1 Introduction"]

@@ -21,6 +21,8 @@ class Settings:
     grobid_url: str = "http://grobid:8070"
     tts_threads: int = 8
     ocr_jobs: int = 8
+    grobid_wait_s: float = 180
+    llm_wait_s: float = 300
     lexicon_path: Path = Path("/app/config/normalizer/lexicon.yaml")
 
     @property
@@ -43,5 +45,7 @@ def load() -> Settings:
         grobid_url=env.get("GROBID_URL", "http://grobid:8070"),
         tts_threads=int(env.get("TTS_THREADS", "8")),
         ocr_jobs=int(env.get("OCR_JOBS", "8")),
+        grobid_wait_s=float(env.get("GROBID_WAIT_S", "180")),
+        llm_wait_s=float(env.get("LLM_WAIT_S", "300")),
         lexicon_path=Path(env.get("LEXICON_PATH", "/app/config/normalizer/lexicon.yaml")),
     )

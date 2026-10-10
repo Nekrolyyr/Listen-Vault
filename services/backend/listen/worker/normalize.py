@@ -107,6 +107,8 @@ class Normalizer:
         t = re.sub(r"\$[^$]{1,200}\$", " a formula ", t)
 
         t = re.sub(r"\(\s*[,;]?\s*\)|\[\s*\]", "", t)
+        t = re.sub(r"[†‡§¶]", "", t)                                          # footnote marks
+        t = re.sub(r"(?<!\S)[\[\]*]+(?!\S)", "", t)                            # stray brackets, asterisks
         t = re.sub(r"\s+([,.;:!?)])", r"\1", t)
         t = re.sub(r"([(])\s+", r"\1", t)
         t = re.sub(r"\s{2,}", " ", t).strip()
