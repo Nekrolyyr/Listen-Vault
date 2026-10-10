@@ -121,6 +121,7 @@ services:
     networks: [listen]
     mem_limit: 2560m
     cpus: 14
+    stop_grace_period: 60s   # lets the worker hand its current job back to the queue
     logging: *logging
 
   llm:
