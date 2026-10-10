@@ -1,9 +1,11 @@
 """Detect PDFs without a usable text layer and OCR them with OCRmyPDF + Tesseract (English)."""
 from __future__ import annotations
 
+import importlib.util
 import logging
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from pypdf import PdfReader
@@ -41,11 +43,13 @@ def prepare_viewer_pdf(source: Path, target: Path, jobs: int) -> bool:
     if not needs_ocr(source):
         shutil.copyfile(source, target)
         return False
-    if shutil.which("ocrmypdf") is None:
+    if importlib.util.find_spec("ocrmypdf") is None:
         raise OcrError("This PDF is a scan and needs OCR, but ocrmypdf is not installed")
+    if shutil.which("tesseract") is None:
+        raise OcrError("This PDF is a scan and needs OCR, but Tesseract is not installed")
     tmp = target.with_suffix(".ocr.tmp.pdf")
     cmd = [
-        "ocrmypdf", "--skip-text", "--language", "eng", "--output-type", "pdf",
+        sys.executable, "-m", "ocrmypdf", "--skip-text", "--language", "eng", "--output-type", "pdf",
         "--rotate-pages", "--deskew", "--jobs", str(jobs), "--quiet", str(source), str(tmp),
     ]
     log.info("running OCR: %s", " ".join(cmd))
