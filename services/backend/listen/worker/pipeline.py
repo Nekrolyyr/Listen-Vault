@@ -235,6 +235,10 @@ class Pipeline:
                     [(job["document_id"], t.kind, t.term, t.source, t.weight) for t in terms],
                 )
         log.info("keywords: %d terms (%d from the LLM)", len(terms), sum(t.source == "llm" for t in terms))
+        if llm is not None:
+            written = enrich.element_summaries(doc, llm)
+            doc.save(paths.structure)  # the summaries travel with the paragraphs into the chapter plan
+            log.info("figure and table summaries: %d", written)
         paths.enriched.write_text("{}")
 
     def _structure_pdf(self, pdf: Path) -> Document:
@@ -374,7 +378,7 @@ def chapter_segments(plan: chapters.ChapterPlan, normalizer: Normalizer) -> list
             segs.append(Segment("[Equation]", "The paper shows an equation here.", p.page, "paragraph"))
         elif p.kind in ("figure", "table"):
             name, _, caption = p.text.partition(": ")
-            segs.append(Segment(p.text, normalizer(f"{name}. {caption}"), p.page, "paragraph"))
+            segs.append(Segment(p.text, normalizer(f"{name}. {p.summary or caption}"), p.page, "paragraph"))
         else:
             segs += _sentences(p.text, p.page, normalizer, lines=p.boxes)
     return [s for s in segs if re.search(r"[A-Za-z0-9]", s.spoken)]  # drop stray "]" or "*" fragments

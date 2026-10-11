@@ -131,7 +131,24 @@ def _figure(fig) -> Paragraph | None:
         return None
     name = re.sub(r"\s+([.:])", r"\1", name).rstrip(".: ")                      # "Fig. 1 ." -> "Fig. 1"
     caption = re.sub(r"^(?:fig(?:ure)?s?\.?|table|tab\.)\s*[\dA-Z]+[.:]?\s*", "", caption, flags=re.I)
-    return Paragraph(text=f"{name}: {caption}", page=_page(fig), kind=kind)
+    rows = _table_rows(fig) if kind == "table" else ""
+    return Paragraph(text=f"{name}: {caption}", page=_page(fig), kind=kind, rows=rows)
+
+
+MAX_TABLE_ROWS = 40
+
+
+def _table_rows(fig) -> str:
+    """Cell text of a table, one row per line. GROBID only gives cells where it recognised a table body."""
+    table = fig.find(".//t:table", NS)
+    if table is None:
+        return ""
+    lines = []
+    for row in table.findall(".//t:row", NS)[:MAX_TABLE_ROWS]:
+        cells = [_text(c) for c in row.findall("t:cell", NS)]
+        if any(cells):
+            lines.append(" | ".join(cells))
+    return "\n".join(lines)
 
 
 ORG_WORDS = re.compile(

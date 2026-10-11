@@ -184,3 +184,18 @@ def test_unpronounceable_fragments_are_dropped():
     segs = chapter_segments(plan, Normalizer())
     assert [s.display for s in segs] == ["Results", "It works.", "Done."]
     assert Normalizer()("It works. ] * Done †.") == "It works. Done."
+
+
+def test_spoken_figure_text_uses_the_summary():
+    from listen.worker import chapters as ch
+    from listen.worker.docmodel import Paragraph
+    from listen.worker.normalize import Normalizer
+    from listen.worker.pipeline import chapter_segments
+
+    plan = ch.ChapterPlan(kind="chapter", title="Results", paragraphs=[
+        Paragraph("Table 1: Accuracy per setting.", 3, kind="table", summary="The base model scores highest."),
+        Paragraph("Figure 2: Accuracy as heads are removed.", 3, kind="figure"),
+    ])
+    spoken = [s.spoken for s in chapter_segments(plan, Normalizer())]
+    assert "Table 1. The base model scores highest." in spoken
+    assert "Figure 2. Accuracy as heads are removed." in spoken  # no summary: the caption is read

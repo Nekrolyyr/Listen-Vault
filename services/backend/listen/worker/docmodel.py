@@ -12,6 +12,8 @@ class Paragraph:
     page: int | None = None   # 1-based PDF page where the paragraph starts
     kind: str = "text"        # text | heading | figure | table | equation
     boxes: list[list[float]] = field(default_factory=list)  # [page, x, y, w, h] per text line (GROBID coords)
+    rows: str = ""            # tables: the cell text, one row per line ("a | b | c")
+    summary: str | None = None  # figures and tables: 1–2 sentences the LLM wrote (see enrich.py), spoken instead of the caption
 
 
 @dataclass

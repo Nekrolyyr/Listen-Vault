@@ -13,6 +13,7 @@ from collections import Counter
 from dataclasses import dataclass
 
 from . import sentences
+from .chapters import accept
 from .docmodel import Document
 from .llm import LlmClient, LlmError
 
@@ -108,6 +109,54 @@ def llm_terms(doc: Document, llm: LlmClient) -> list[Term]:
         for term in clean_terms(values, limit):
             terms.append(Term(kind, term, "llm", 1.0))
     return terms
+
+
+MAX_ELEMENTS = 15          # figures and tables summarized per paper (each call takes ~10–20 s)
+ELEMENT_TOKENS = 700       # input budget per figure or table
+CITING_SENTENCES = 3       # sentences from the text that mention the figure or table
+
+
+def _citations(doc: Document, name: str) -> list[str]:
+    """Sentences of the body text that refer to a figure or table, e.g. "Figure 3" -> "Fig. 3", "Figs. 3"."""
+    m = re.search(r"(\d+[a-z]?)$", name.strip())
+    if m is None:
+        return []
+    label = re.escape(m.group(1))
+    pattern = re.compile(rf"\b(?:fig(?:ure)?s?\.?|tab(?:le)?s?\.?)\s*{label}\b", re.I)
+    found: list[str] = []
+    for section in doc.sections:
+        for p in section.paragraphs:
+            if p.kind == "text":
+                found += [s for s in sentences.split(p.text) if pattern.search(s)]
+    return found[:CITING_SENTENCES]
+
+
+def element_summaries(doc: Document, llm: LlmClient) -> int:
+    """Write summaries for figures and tables: from their rows when they have them, otherwise from the
+    text that cites them. Returns the number of summaries written."""
+    elements = [p for s in doc.sections for p in s.paragraphs if p.kind in ("figure", "table")]
+    written = 0
+    for p in elements[:MAX_ELEMENTS]:
+        name, _, caption = p.text.partition(": ")
+        if p.kind == "table" and p.rows:
+            source = f"{p.text}\n{p.rows}"
+            question = "Summarize the table above in 2 sentences:"
+        else:
+            cited = _citations(doc, name)
+            if not cited:
+                p.summary = None
+                continue
+            source = f"{caption}\n" + " ".join(cited)
+            question = f"Summarize what {name} shows, based on the text above, in 2 sentences:"
+        try:
+            text = llm.truncate(source, ELEMENT_TOKENS)
+            answer = llm.complete(f"{text}\n\n{question}", 120, 0.2)
+        except LlmError as e:
+            log.warning("summary of %s failed: %s", name, e)
+            continue
+        p.summary = accept(answer, 6, 50)
+        written += p.summary is not None
+    return written
 
 
 def extract(doc: Document, llm: LlmClient | None) -> list[Term]:
