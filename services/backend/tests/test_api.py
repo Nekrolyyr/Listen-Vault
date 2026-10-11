@@ -221,3 +221,31 @@ def test_library_filters_facets_groups_and_graph(client, settings):
     group = {n["title"]: n["group"] for n in graph["nodes"]}
     assert len(graph["nodes"]) == 3 and group["Head pruning"] == group["Pruning again"] != group["Sleep"]
     assert [(link["source"], link["target"]) for link in graph["links"]] == [tuple(sorted((a, b)))]
+
+
+def test_timeline_and_topics(client, settings):
+    a = _library_doc(settings, "Old paper", "2019", "ready", [("keyword", "sleep")])
+    _library_doc(settings, "New paper", "2024-03-05", "ready", [("keyword", "sleep")], source="url")
+    _library_doc(settings, "Undated", None, "ready", [("keyword", "sleep")])
+    _library_doc(settings, "Other", "2020", "ready", [("keyword", "memory")])
+
+    timeline = client.get("/api/library/timeline?term=sleep", headers=AUTH).json()
+    assert timeline["label"] == "sleep"
+    assert [i["title"] for i in timeline["items"]] == ["Old paper", "New paper", "Undated"]  # undated last
+    assert timeline["items"][0] == {"id": a, "title": "Old paper", "date": "2019-01-01", "precision": "year",
+                                    "source": "pdf", "status": "ready", "listened": False}
+    assert timeline["items"][1]["date"] == "2024-03-05" and timeline["items"][1]["precision"] == "day"
+    assert timeline["items"][2]["date"] is None
+
+    assert client.get("/api/library/timeline", headers=AUTH).status_code == 422
+    assert client.get("/api/library/timeline?topic=999", headers=AUTH).status_code == 404
+
+    assert client.post("/api/library/topics/rebuild", headers=AUTH).json() == {"queued": True}
+    assert client.post("/api/library/topics/rebuild", headers=AUTH).json() == {"queued": False}
+    with psycopg.connect(settings.database_url, autocommit=True) as conn:
+        topic_id = conn.execute("INSERT INTO topics (name, terms) VALUES ('Sleep and memory', '{sleep,memory}') "
+                                "RETURNING id").fetchone()[0]
+    listed = client.get("/api/library/topics", headers=AUTH).json()
+    assert listed == [{"id": topic_id, "name": "Sleep and memory", "terms": ["sleep", "memory"], "documents": 4}]
+    by_topic = client.get(f"/api/library/timeline?topic={topic_id}", headers=AUTH).json()
+    assert by_topic["label"] == "Sleep and memory" and len(by_topic["items"]) == 4

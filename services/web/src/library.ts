@@ -1,7 +1,8 @@
-import { api, type Doc, type Facets, type Filters, type Graph, type GraphNode, type GroupDoc, type Groups, NO_FILTERS } from "./api";
+import { api, type Doc, type Facets, type Filters, type Graph, type GroupDoc, type Groups, NO_FILTERS, type TimelineItem } from "./api";
 import { authors, date, duration, h, icon, toast } from "./dom";
 import { graphView } from "./graph";
 import { facetColumn } from "./facets";
+import { timelinePanel } from "./timeline";
 import { navigate, type View } from "./main";
 
 const STAGES: Record<string, string> = {
@@ -13,11 +14,12 @@ const STAGES: Record<string, string> = {
   synthesis: "Generating audio",
 };
 
-type Mode = "list" | "groups" | "graph";
+type Mode = "list" | "groups" | "graph" | "timeline";
 const MODES: [Mode, string][] = [
   ["list", "List"],
   ["groups", "Groups"],
   ["graph", "Graph"],
+  ["timeline", "Timeline"],
 ];
 
 /** Actions that re-run processing make no sense while it is running or before the item was queued. */
@@ -55,7 +57,7 @@ export function libraryView(): View {
   let query = "";
   let sort = localStore("sort") ?? "added";
   const saved = localStore("view");
-  let mode: Mode = saved === "groups" || saved === "graph" ? saved : "list";
+  let mode: Mode = saved === "groups" || saved === "graph" || saved === "timeline" ? saved : "list";
   let timer = 0;
   let destroyed = false;
   let lastKey = "";
@@ -291,14 +293,18 @@ export function libraryView(): View {
   }
 
   // ---------------------------------------------------------------- graph
-  function openNode(n: GraphNode): void {
-    if (n.status === "ready" || n.status === "processing") navigate(`/doc/${n.id}`);
+  function openDoc(d: { id: string; status: string }): void {
+    if (d.status === "ready" || d.status === "processing") navigate(`/doc/${d.id}`);
     else toast("This paper is not processed yet, so there is nothing to open.", "info");
   }
 
+  // ---------------------------------------------------------------- timeline
+  // Kept across refreshes, so the chosen topic or keyword stays selected while the library updates.
+  const timeline = timelinePanel((item: TimelineItem) => openDoc(item));
+
   function renderGraph(): HTMLElement {
     if (!graph) return h("p", { class: "pane-message" }, "Drawing the graph…");
-    return graphView(graph, openNode);
+    return graphView(graph, openDoc);
   }
 
   // ---------------------------------------------------------------- dashboard
@@ -373,7 +379,8 @@ export function libraryView(): View {
     dashSlot.replaceChildren(dashboard());
     facetSlot.replaceChildren(facetColumn(facets, filters, setFilters));
     headSlot.replaceChildren(resultsHead());
-    bodySlot.replaceChildren(mode === "groups" ? renderGroups() : mode === "graph" ? renderGraph() : renderList());
+    const body = { groups: renderGroups, graph: renderGraph, timeline: () => timeline, list: renderList }[mode];
+    bodySlot.replaceChildren(body());
   }
 
   // ---------------------------------------------------------------- inputs

@@ -365,3 +365,28 @@ button.tile:hover { border-color: var(--accent); }
 .graph-node:focus-visible circle { stroke: var(--accent); stroke-width: 3; }
 .graph-label { font-size: 11px; fill: var(--text); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; pointer-events: none; }
 .graph-hint { margin: 0; }
+
+/* ---- timeline of a topic or keyword ---- */
+.timeline { display: grid; gap: 14px; }
+.timeline-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.timeline-controls input { flex: 1 1 220px; }
+.topic-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip.topic { border: 1px solid var(--border); background: var(--surface); cursor: pointer; color: var(--text); }
+.chip.topic[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.timeline-title { font-size: 17px; margin: 0; }
+.timeline-svg { width: 100%; height: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.tl-bar { fill: var(--accent-soft); }
+.tl-axis, .tl-tick { stroke: var(--muted); stroke-width: 1; }
+.tl-year, .tl-lane { font-size: 11px; fill: var(--muted); }
+.tl-lane { fill: var(--text); font-weight: 600; }
+.tl-dot { cursor: pointer; outline: none; }
+.tl-dot circle { fill: var(--accent); stroke: var(--surface); stroke-width: 1.5; }
+.tl-dot.listened circle { fill: var(--muted); }
+.tl-dot:focus-visible circle, .tl-dot:hover circle { stroke: var(--text); stroke-width: 2.5; }
+.timeline-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.timeline-list li { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; font-size: 14px; }
+.timeline-list li.listened .tl-title { color: var(--muted); }
+.tl-date { color: var(--muted); font-variant-numeric: tabular-nums; }
+.tl-title { text-align: left; border: 0; background: none; padding: 0; color: var(--text); font: inherit; cursor: pointer; }
+.tl-title:hover { color: var(--accent); }
+@media (max-width: 600px) { .timeline-list li { grid-template-columns: 1fr; gap: 2px; } }

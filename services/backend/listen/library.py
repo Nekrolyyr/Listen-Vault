@@ -9,6 +9,7 @@ graph edge needs EDGE_SIMILARITY.
 from __future__ import annotations
 
 import math
+import re
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 
@@ -91,3 +92,20 @@ def edges(vecs: dict[str, Vector], neighbours: int = EDGE_NEIGHBOURS,
                 key = tuple(sorted((a, b)))
                 best[key] = max(best.get(key, 0.0), s)
     return [(a, b, round(s, 3)) for (a, b), s in best.items()]
+
+
+YEAR = re.compile(r"\b(1[89]\d{2}|20\d{2}|21\d{2})(?:[-/.](\d{1,2})(?:[-/.](\d{1,2}))?)?\b")
+
+
+def publication_date(published: str | None) -> tuple[str, str] | None:
+    """('YYYY-MM-DD', precision) from a publication date, where precision is day, month or year.
+    None when the date is unknown. Missing parts are filled with 01 for the timeline."""
+    m = YEAR.search(published or "")
+    if m is None:
+        return None
+    year, month, day = m.group(1), m.group(2), m.group(3)
+    if month and 1 <= int(month) <= 12:
+        if day and 1 <= int(day) <= 31:
+            return f"{year}-{int(month):02d}-{int(day):02d}", "day"
+        return f"{year}-{int(month):02d}-01", "month"
+    return f"{year}-01-01", "year"

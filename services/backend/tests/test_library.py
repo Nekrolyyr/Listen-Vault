@@ -41,3 +41,12 @@ def test_edges_connect_nearest_neighbours_above_threshold():
 
 def test_empty_library_has_no_groups():
     assert library.clusters({}) == [] and library.edges({}) == []
+
+
+def test_publication_dates_keep_their_precision():
+    assert library.publication_date("2024-05-02") == ("2024-05-02", "day")
+    assert library.publication_date("May 2021") == ("2021-01-01", "year")  # month names are not parsed
+    assert library.publication_date("2019") == ("2019-01-01", "year")
+    assert library.publication_date("2023-13") == ("2023-01-01", "year")  # invalid month falls back to the year
+    assert library.publication_date("Updated 2022-08") == ("2022-08-01", "month")
+    assert library.publication_date("") is None and library.publication_date(None) is None

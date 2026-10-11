@@ -254,6 +254,49 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
         grouped = {m for g in groups for m in g}
         return {"groups": out, "ungrouped": [docs[i] for i in docs if i not in grouped]}
 
+    @app.get("/api/library/topics")
+    def library_topics(request: Request):
+        with pool(request).connection() as conn:
+            rows = conn.execute("SELECT id, name, terms FROM topics ORDER BY name").fetchall()
+            out = []
+            for r in rows:
+                n = conn.execute("SELECT count(DISTINCT document_id) AS n FROM document_keywords "
+                                 "WHERE term = ANY(%s)", (list(r["terms"]),)).fetchone()["n"]
+                out.append({"id": r["id"], "name": r["name"], "terms": list(r["terms"]), "documents": n})
+        return sorted(out, key=lambda t: (-t["documents"], t["name"]))
+
+    @app.post("/api/library/topics/rebuild", status_code=202)
+    def rebuild_topics(request: Request):
+        with pool(request).connection() as conn, conn.transaction():
+            job = jobs.enqueue_library(conn, "topics")
+        return {"queued": job is not None}
+
+    @app.get("/api/library/timeline")
+    def library_timeline(request: Request, topic: int | None = None, term: str | None = Query(None, max_length=80)):
+        """Papers and articles that have a topic's keywords (or one keyword), in date order."""
+        with pool(request).connection() as conn:
+            if topic is not None:
+                row = conn.execute("SELECT name, terms FROM topics WHERE id = %s", (topic,)).fetchone()
+                if row is None:
+                    raise HTTPException(404, "Topic not found")
+                label, terms = row["name"], list(row["terms"])
+            elif term and term.strip():
+                label, terms = term.strip(), [term.strip().lower()]
+            else:
+                raise HTTPException(422, "Give a topic or a keyword")
+            rows = conn.execute(
+                "SELECT d.id, d.title, d.published, d.status, d.listened, d.source_type FROM documents d "
+                "WHERE EXISTS (SELECT 1 FROM document_keywords k WHERE k.document_id = d.id AND k.term = ANY(%s))",
+                (terms,)).fetchall()
+        items = []
+        for r in rows:
+            dated = library.publication_date(r["published"])
+            items.append({"id": str(r["id"]), "title": r["title"] or "Untitled", "date": dated[0] if dated else None,
+                          "precision": dated[1] if dated else None, "source": r["source_type"],
+                          "status": r["status"], "listened": r["listened"]})
+        items.sort(key=lambda i: (i["date"] is None, i["date"] or "", i["title"]))
+        return {"label": label, "terms": terms, "items": items}
+
     @app.get("/api/library/graph")
     def library_graph(request: Request, filters: dict = Depends(parse_filters)):
         """Nodes are papers, edges connect papers with similar terms; `group` numbers the groups."""

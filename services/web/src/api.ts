@@ -83,6 +83,29 @@ export interface Graph {
   links: GraphLink[];
 }
 
+export interface Topic {
+  id: number;
+  name: string;
+  terms: string[];
+  documents: number;
+}
+
+export interface TimelineItem {
+  id: string;
+  title: string;
+  date: string | null; // YYYY-MM-DD, missing parts filled with 01
+  precision: "day" | "month" | "year" | null;
+  source: "pdf" | "url";
+  status: Doc["status"];
+  listened: boolean;
+}
+
+export interface Timeline {
+  label: string;
+  terms: string[];
+  items: TimelineItem[];
+}
+
 export interface Groups {
   groups: { label: string[]; documents: GroupDoc[] }[];
   ungrouped: GroupDoc[];
@@ -219,6 +242,10 @@ export const api = {
   facets: (f: Filters) => request<Facets>("GET", `/api/library/facets?${filterQuery(f)}`),
   groups: (f: Filters) => request<Groups>("GET", `/api/library/groups?${filterQuery(f)}`),
   graph: (f: Filters) => request<Graph>("GET", `/api/library/graph?${filterQuery(f)}`),
+  topics: () => request<Topic[]>("GET", "/api/library/topics"),
+  rebuildTopics: () => request<{ queued: boolean }>("POST", "/api/library/topics/rebuild"),
+  timeline: (sel: { topic: number } | { term: string }) =>
+    request<Timeline>("GET", `/api/library/timeline?${"topic" in sel ? `topic=${sel.topic}` : `term=${encodeURIComponent(sel.term)}`}`),
   document: (id: string) => request<DocDetail>("GET", `/api/documents/${id}`),
   addUrl: (url: string) => request<Doc>("POST", "/api/documents/url", { url }),
   patch: (id: string, changes: { title?: string; listened?: boolean }) =>

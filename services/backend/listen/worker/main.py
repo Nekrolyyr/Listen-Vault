@@ -9,7 +9,7 @@ from uuid import UUID
 
 from .. import config, db, jobs, zotero
 from ..storage import DocPaths
-from . import qa
+from . import qa, topics
 from .fetch import FetchError
 from .grobid import GrobidError
 from .llm import LlmClient
@@ -77,6 +77,9 @@ class Worker:
             return
         if job["kind"] == "qa":
             qa.run(self.pool, self.settings, self.pipeline.llm, job)
+            return
+        if job["kind"] == "topics":
+            topics.rebuild(self.pool, self.pipeline.llm)
             return
         raise PipelineError(f"Unknown job kind {job['kind']!r}")
 
