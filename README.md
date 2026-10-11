@@ -65,12 +65,27 @@ All commands run on the vault host from `/home/doctor/docker/listen-vault`.
   link their PDF are fetched as PDF).
 - **Listen:** chapters become playable as they finish. The PDF follows the voice; scroll freely and
   press **Follow** to rejoin. The position is saved, so you can continue on another device.
-- **Voice:** Settings → voice, speed, citations, chapter summaries. Then use "Regenerate audio" on a
+- **Voice:** Settings → voice, speed, citations. Then use "Regenerate audio" on a
   document. Voice samples are in [docs/samples](docs/samples).
 - **Pronunciation:** add words to `config/normalizer/lexicon.yaml`; it is read for every job.
+- **Overview:** the first track reads the paper's abstract. Chapters are named as they are (the LLM only
+  names untitled sections).
+- **Keywords:** each paper gets a task, methods, datasets, topics and keywords, shown under its title. Papers
+  added before this existed: Settings → Library → "Extract keywords for the library".
+- **Figures and tables:** read with a short summary (from the table's cells, or from the text that cites the
+  figure). Figure images are not described.
+- **Ask:** the reader's "Ask about this paper" answers from the paper's passages, with the page of each
+  citation. Answers take about 30 seconds.
+- **Library:** the dashboard and filter column narrow the list. Groups, Graph and Timeline show related papers
+  by their keywords; the Timeline shows a topic (or keyword) over the years. Topics are rebuilt from Settings.
+- **Zotero:** set `ZOTERO_USER_ID` and `ZOTERO_API_KEY` in `.env`. Every item is listed; papers tagged
+  `listen-queue` are processed automatically, others can be queued from the library. PDFs need Zotero's
+  file storage (not WebDAV).
+- **Upgrading an existing library:** "Rebuild chapters" gives a paper the abstract overview; "Process from
+  scratch" also gives the reader exact sentence positions on the PDF.
 
-Typical timing for a 15-page paper: OCR (scans only) under a minute, structure ~30 s, chapter summaries
-~3–4 min, audio ~12 min for ~35 min of speech.
+Typical timing for a 15-page paper: OCR (scans only) under a minute, structure ~30 s, keywords and summaries
+~2–4 min, audio ~12 min for ~35 min of speech.
 
 ## Operations
 
@@ -89,7 +104,7 @@ The backup contains the Authelia database with your passkey registration, so kee
 
 ```sh
 uv venv --python 3.12 .venv && uv pip install -e "services/backend[worker,dev]" pgserver
-.venv/bin/python -m pytest services/backend          # 80+ tests, real PostgreSQL via pgserver
+.venv/bin/python -m pytest services/backend          # 128 tests, real PostgreSQL via pgserver
 cd services/web && npm ci && npm run build            # type-check and build the web app
 ```
 

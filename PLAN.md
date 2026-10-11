@@ -252,6 +252,52 @@ first thing to watch on deployment.
 - `services/api` + `services/worker` became one package `services/backend` with two image targets,
   and the web app is served by the api (one container fewer).
 
+## 14. Enhancement round 2
+
+Eight user requests (summary overhaul, follow fix, tables and figures, Zotero, Q&A, library overview,
+network graph, topic timeline). Decisions from the user:
+
+| # | Decision |
+|---|---|
+| D1 | Keep BLOOMZ-7b1. No vision model. |
+| D2 | Figures and tables are text-only: caption, table cells and the sentences that cite them, summarized by the LLM. Figure images are not extracted. |
+| D3 | Chapter intros removed. The overview track reads the abstract. |
+| D4 | Topics are hybrid: deterministic clustering of keyword co-occurrence; the LLM names each cluster and checks its members in batches. |
+| D5 | Zotero: personal library, papers queued by tag `listen-queue`. PDFs need Zotero cloud file storage. |
+
+### Phases and migrations
+
+Each phase has its own commit. Migrations are applied in file order at start-up (api and worker).
+
+- [x] **P1. Reader follow** (`d51e2e1`): sentence rectangles from GROBID line boxes. Migration `002_sentence_boxes`.
+- [x] **P2. Abstract overview** (`f5f1061`): overview = abstract; no LLM summaries; intros setting removed. No migration.
+- [x] **P3. Keywords** (`3d6fe3f`): ENRICH stage with schema-constrained JSON, frequent words added; backfill in Settings. Migration `003_keywords`.
+- [x] **P4. Zotero** (`f035319`): catalogued items, incremental sync, tag queueing, Queue button. Migration `004_zotero` (status `catalogued`, job kinds, abstract and DOI, link tables).
+- [x] **P5. Tables and figures** (`fb0115e`): table rows from GROBID; LLM summaries spoken in place of captions. No migration (summaries live in the structure file).
+- [x] **P6. Q&A** (`64ed32d`): BM25 passages, cited answers, `qa` jobs, side panel. Migration `005_questions`.
+- [x] **P7. Library overview** (`1ac9f28`): dashboard, facet column, filters on the list, groups by average-linkage clustering, abstract playback. No migration.
+- [x] **P8. Network graph** (`780e6cc`): similarity edges, d3-force layout (pinned 3.0.0), SVG. No migration.
+- [x] **P9. Topics and timeline** (`fc516df`): topic clustering with LLM naming and membership check; timeline view. Migration `006_topics`.
+
+### Verification status
+
+- Backend: 128 tests pass (`pytest services/backend`), including PostgreSQL migrations, the job queue
+  paths for library jobs, Zotero sync against a mocked API, and the Q&A, topic and timeline logic.
+- Web: `npm run build` (type-check and bundle) passes after every phase.
+- **Not yet verified on the vault host:** real BLOOMZ output for keywords, summaries, Q&A and topic names
+  (the JSON grammar and the prompts need a check on real papers); GROBID table cells; a live Zotero library;
+  the UI in a browser (`tests/e2e/ui_check.py` has not been extended for the new views); the Docker images.
+
+### Known limits
+
+- Figure images are not described (text-only decision D2).
+- Keyword extraction and figure summaries add LLM time per paper (roughly 1–4 minutes); they run before chapter naming.
+- Topic clustering and the groups are quadratic in the number of terms or papers. Topics use the 300 most common
+  keywords; a large library (thousands of papers) would need caching.
+- Papers processed before this round keep their old overview until "Rebuild chapters"; PDF sentence positions need
+  "Process from scratch".
+- A Zotero item deleted in Listen is re-catalogued the next time it changes in Zotero.
+
 ## Sources
 
 - Kokoro CPU benchmark (community): https://prismix.dev/news/5dbcdf80e32e
