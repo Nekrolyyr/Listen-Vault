@@ -33,6 +33,16 @@ def enqueue(conn: Connection, document_id: UUID | str, options: dict[str, Any] |
     return row["id"]
 
 
+def enqueue_library(conn: Connection, kind: str, options: dict[str, Any] | None = None) -> int | None:
+    """Queue a job that is not about one document (e.g. a Zotero sync). Returns None if one is already open."""
+    row = conn.execute(
+        "INSERT INTO jobs (kind, options) SELECT %s, %s WHERE NOT EXISTS "
+        "(SELECT 1 FROM jobs WHERE kind = %s AND state IN ('queued', 'running')) RETURNING id",
+        (kind, json.dumps(options or {}), kind),
+    ).fetchone()
+    return row["id"] if row else None
+
+
 def has_open_job(conn: Connection, document_id: UUID | str) -> bool:
     row = conn.execute(
         "SELECT 1 FROM jobs WHERE document_id = %s AND state IN ('queued', 'running') LIMIT 1",
@@ -60,7 +70,7 @@ def claim(conn: Connection, worker: str) -> dict[str, Any] | None:
             """,
             {"w": worker, "stale": STALE_AFTER},
         ).fetchone()
-        if row:
+        if row and row["kind"] == "document":
             conn.execute(
                 "UPDATE documents SET status = 'processing', updated_at = now() WHERE id = %s",
                 (row["document_id"],),
@@ -85,22 +95,24 @@ def heartbeat(conn: Connection, job_id: int, stage: str | None = None,
     return cur.rowcount == 1
 
 
-def finish(conn: Connection, job_id: int, document_id: UUID | str) -> None:
+def finish(conn: Connection, job_id: int, document_id: UUID | str | None) -> None:
     with conn.transaction():
         conn.execute(
             "UPDATE jobs SET state = 'done', finished_at = now(), heartbeat_at = now() WHERE id = %s",
             (job_id,),
         )
-        conn.execute(
-            "UPDATE documents SET status = 'ready', error = NULL, updated_at = now() WHERE id = %s",
-            (document_id,),
-        )
+        if document_id is not None:
+            conn.execute(
+                "UPDATE documents SET status = 'ready', error = NULL, updated_at = now() WHERE id = %s",
+                (document_id,),
+            )
 
 
 def fail(conn: Connection, job: dict[str, Any], error: str, retryable: bool) -> bool:
     """Mark a job failed, or re-queue it with backoff. Returns True when it will be retried."""
     attempts = job["attempts"]
     retry = retryable and attempts < MAX_ATTEMPTS
+    document_id = job["document_id"]
     with conn.transaction():
         if retry:
             delay = RETRY_DELAYS_S[min(attempts, len(RETRY_DELAYS_S)) - 1]
@@ -108,17 +120,19 @@ def fail(conn: Connection, job: dict[str, Any], error: str, retryable: bool) -> 
                 "UPDATE jobs SET state = 'queued', error = %s, run_after = now() + %s WHERE id = %s",
                 (error, timedelta(seconds=delay), job["id"]),
             )
-            conn.execute(
-                "UPDATE documents SET status = 'queued', error = %s, updated_at = now() WHERE id = %s",
-                (error, job["document_id"]),
-            )
+            if document_id is not None:
+                conn.execute(
+                    "UPDATE documents SET status = 'queued', error = %s, updated_at = now() WHERE id = %s",
+                    (error, document_id),
+                )
         else:
             conn.execute(
                 "UPDATE jobs SET state = 'failed', error = %s, finished_at = now() WHERE id = %s",
                 (error, job["id"]),
             )
-            conn.execute(
-                "UPDATE documents SET status = 'failed', error = %s, updated_at = now() WHERE id = %s",
-                (error, job["document_id"]),
-            )
+            if document_id is not None:
+                conn.execute(
+                    "UPDATE documents SET status = 'failed', error = %s, updated_at = now() WHERE id = %s",
+                    (error, document_id),
+                )
     return retry

@@ -104,6 +104,22 @@ def test_keywords_backfill_queues_ready_documents_without_keywords(client, setti
     assert detail["keywords"]["topic"] == ["sleep"] and detail["keywords"]["task"] == []
 
 
+def test_zotero_status_and_queue_of_catalogued_items(client, settings):
+    status = client.get("/api/zotero", headers=AUTH).json()
+    assert status["configured"] is False and status["queue_tag"] == "listen-queue"
+    assert client.post("/api/zotero/sync", headers=AUTH).status_code == 503
+    with psycopg.connect(settings.database_url, autocommit=True) as conn:
+        with_link = conn.execute("INSERT INTO documents (source_type, source_url, title, status) "
+                                 "VALUES ('url', 'https://doi.org/10.1/x', 'A', 'catalogued') RETURNING id").fetchone()[0]
+        no_link = conn.execute("INSERT INTO documents (source_type, title, status) "
+                               "VALUES ('url', 'B', 'catalogued') RETURNING id").fetchone()[0]
+    assert client.post(f"/api/documents/{no_link}/queue", headers=AUTH).status_code == 422
+    r = client.post(f"/api/documents/{with_link}/queue", headers=AUTH)
+    assert r.status_code == 202 and r.json()["status"] == "queued"
+    assert client.post(f"/api/documents/{with_link}/queue", headers=AUTH).status_code == 409
+    assert client.get("/api/zotero", headers=AUTH).json()["catalogued"] == 1
+
+
 def test_playback_and_settings(client):
     doc_id = client.post("/api/documents/url", json={"url": "https://example.org/a"}, headers=AUTH).json()["id"]
     assert client.get(f"/api/documents/{doc_id}/playback", headers=AUTH).json()["position_s"] == 0

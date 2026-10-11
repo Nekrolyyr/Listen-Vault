@@ -1,4 +1,4 @@
-"""Background worker: claims jobs from Postgres and runs the pipeline, one job at a time."""
+"""Background worker: claims jobs from Postgres and runs them, one at a time."""
 from __future__ import annotations
 
 import logging
@@ -7,7 +7,7 @@ import socket
 import time
 from uuid import UUID
 
-from .. import config, db, jobs
+from .. import config, db, jobs, zotero
 from ..storage import DocPaths
 from .fetch import FetchError
 from .grobid import GrobidError
@@ -39,10 +39,14 @@ class Worker:
             job = jobs.claim(conn, self.name)
         if job is None:
             return False
-        log.info("job %s for document %s (attempt %s)", job["id"], job["document_id"], job["attempts"])
+        log.info("job %s (%s) for document %s (attempt %s)", job["id"], job["kind"], job["document_id"],
+                 job["attempts"])
         t0 = time.monotonic()
         try:
-            self.pipeline.run(job)
+            if job["kind"] == "document":
+                self.pipeline.run(job)
+            else:
+                self._library_job(job)
         except Cancelled:
             log.info("document %s was deleted; dropping its files", job["document_id"])
             DocPaths(self.settings.docs_dir, job["document_id"]).remove()
@@ -63,10 +67,25 @@ class Worker:
         log.info("job %s done in %.0fs", job["id"], time.monotonic() - t0)
         return True
 
+    def _library_job(self, job) -> None:
+        if job["kind"] == "zotero_sync":
+            try:
+                zotero.sync(self.pool, self.settings)
+            except zotero.ZoteroError as e:  # recorded in zotero_state.last_error; the next sync tries again
+                log.warning("zotero sync failed: %s", e)
+            return
+        raise PipelineError(f"Unknown job kind {job['kind']!r}")
+
     def _fail(self, job, message: str, retryable: bool) -> None:
         with self.pool.connection() as conn:
             retry = jobs.fail(conn, job, message, retryable)
         log.warning("job %s %s: %s", job["id"], "will be retried" if retry else "failed", message)
+
+    def schedule(self) -> None:
+        """Queue the periodic library jobs (the Zotero sync), unless one is already waiting or running."""
+        with self.pool.connection() as conn, conn.transaction():
+            if self.settings.zotero_configured:
+                jobs.enqueue_library(conn, "zotero_sync")
 
     def sweep_orphans(self) -> int:
         """Remove document folders whose database row is gone (deleted while a job was running)."""
@@ -88,11 +107,16 @@ class Worker:
 
     def loop(self) -> None:
         last_sweep = 0.0
+        last_zotero: float | None = None
         while not self.stopping:
             if time.monotonic() - last_sweep > ORPHAN_SWEEP_S:
                 if n := self.sweep_orphans():
                     log.info("removed %d orphaned document folders", n)
                 last_sweep = time.monotonic()
+            if self.settings.zotero_configured and (
+                    last_zotero is None or time.monotonic() - last_zotero >= self.settings.zotero_sync_s):
+                last_zotero = time.monotonic()
+                self.schedule()
             if not self.run_once():
                 time.sleep(IDLE_SLEEP_S)
 

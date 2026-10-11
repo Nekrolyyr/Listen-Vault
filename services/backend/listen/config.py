@@ -24,10 +24,19 @@ class Settings:
     grobid_wait_s: float = 180
     llm_wait_s: float = 300
     lexicon_path: Path = Path("/app/config/normalizer/lexicon.yaml")
+    # Zotero (optional): papers tagged with zotero_queue_tag are processed; the rest are only catalogued
+    zotero_user_id: str = ""
+    zotero_api_key: str = ""
+    zotero_queue_tag: str = "listen-queue"
+    zotero_sync_s: float = 1800
 
     @property
     def docs_dir(self) -> Path:
         return self.data_dir / "docs"
+
+    @property
+    def zotero_configured(self) -> bool:
+        return bool(self.zotero_user_id and self.zotero_api_key)
 
 
 def load() -> Settings:
@@ -48,4 +57,8 @@ def load() -> Settings:
         grobid_wait_s=float(env.get("GROBID_WAIT_S", "180")),
         llm_wait_s=float(env.get("LLM_WAIT_S", "300")),
         lexicon_path=Path(env.get("LEXICON_PATH", "/app/config/normalizer/lexicon.yaml")),
+        zotero_user_id=env.get("ZOTERO_USER_ID", "").strip(),
+        zotero_api_key=env.get("ZOTERO_API_KEY", "").strip(),
+        zotero_queue_tag=env.get("ZOTERO_QUEUE_TAG", "listen-queue").strip() or "listen-queue",
+        zotero_sync_s=float(env.get("ZOTERO_SYNC_MINUTES", "30")) * 60,
     )

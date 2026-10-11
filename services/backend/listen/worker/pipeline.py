@@ -18,9 +18,10 @@ from psycopg_pool import ConnectionPool
 from .. import appsettings, jobs
 from ..config import Settings
 from ..storage import DocPaths
+from .. import zotero
 from . import article, audio, boxes, chapters, enrich, fetch, grobid, ocr, pdf_fallback, sentences
 from .audio import Segment
-from .docmodel import Document
+from .docmodel import Document, Paragraph
 from .llm import LlmClient
 from .normalize import Normalizer
 from .tts import Engine, make_engine
@@ -132,8 +133,16 @@ class Pipeline:
         if paths.source_pdf.exists() or paths.source_html.exists():
             return
         row = self._doc_row(job["document_id"])
+        with self.pool.connection() as conn:
+            link = conn.execute("SELECT pdf_attachment FROM zotero_links WHERE document_id = %s",
+                                (job["document_id"],)).fetchone()
+        if link and link["pdf_attachment"]:
+            self._fetch_zotero(job, paths, link["pdf_attachment"])
+            return
         if row["source_type"] != "url":
             raise PipelineError("The uploaded PDF is missing on disk")
+        if not row["source_url"]:
+            raise PipelineError("There is no PDF or link to fetch for this item")
         self._progress(job["id"], "fetch")(0, 1)
         try:
             got = fetch.fetch_article(row["source_url"])
@@ -146,6 +155,20 @@ class Pipeline:
         with self.pool.connection() as conn:
             conn.execute("UPDATE documents SET has_pdf = %s, updated_at = now() WHERE id = %s",
                          (got.is_pdf, job["document_id"]))
+
+    def _fetch_zotero(self, job, paths: DocPaths, attachment: str) -> None:
+        if not self.settings.zotero_configured:
+            raise PipelineError("Zotero is not configured on this server")
+        self._progress(job["id"], "fetch")(0, 1)
+        client = zotero.ZoteroClient(self.settings.zotero_user_id, self.settings.zotero_api_key)
+        try:
+            data = client.download_pdf(attachment)
+        except zotero.ZoteroError as e:
+            raise PipelineError(str(e), e.retryable) from e
+        paths.source_pdf.write_bytes(data)
+        with self.pool.connection() as conn:
+            conn.execute("UPDATE documents SET has_pdf = true, source_type = 'pdf', updated_at = now() WHERE id = %s",
+                         (job["document_id"],))
 
     def _ocr(self, job, paths: DocPaths) -> None:
         if not paths.source_pdf.exists() or paths.viewer_pdf.exists():
@@ -176,14 +199,19 @@ class Pipeline:
                 raise PipelineError(str(e)) from e
         if not doc.sections and not doc.abstract:
             raise PipelineError("No readable text was found in this document")
+        if not doc.abstract and row["abstract"]:
+            doc.abstract = [Paragraph(text=row["abstract"])]  # the abstract from Zotero
         doc.save(paths.structure)
 
         filename_title = Path(row["original_filename"] or "").stem
-        with self.pool.connection() as conn:
+        linked = "EXISTS (SELECT 1 FROM zotero_links z WHERE z.document_id = documents.id)"
+        with self.pool.connection() as conn:  # for Zotero items the library's metadata is authoritative
             conn.execute(
-                """UPDATE documents SET
+                f"""UPDATE documents SET
                      title = CASE WHEN title = '' OR title = %(fn)s OR title = source_url THEN %(title)s ELSE title END,
-                     authors = %(authors)s, published = %(published)s, updated_at = now()
+                     authors = CASE WHEN {linked} THEN authors ELSE %(authors)s END,
+                     published = CASE WHEN {linked} THEN published ELSE %(published)s END,
+                     updated_at = now()
                    WHERE id = %(id)s""",
                 {"fn": filename_title, "title": doc.title or row["title"], "authors": doc.authors[:20],
                  "published": doc.published, "id": job["document_id"]},

@@ -20,7 +20,8 @@ export interface Doc {
   source_url: string | null;
   has_pdf: boolean;
   ocr_applied: boolean;
-  status: "queued" | "processing" | "ready" | "failed";
+  status: "catalogued" | "queued" | "processing" | "ready" | "failed";
+  from_zotero: boolean;
   error: string | null;
   duration_s: number | null;
   voice: string | null;
@@ -85,6 +86,15 @@ export interface Settings {
   engines: string[];
 }
 
+export interface ZoteroStatus {
+  configured: boolean;
+  queue_tag: string;
+  last_synced_at: string | null;
+  last_error: string | null;
+  catalogued: number;
+  syncing: boolean;
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -137,6 +147,9 @@ export const api = {
   savePlayback: (id: string, p: Playback, keepalive = false) =>
     request<{ ok: boolean }>("PUT", `/api/documents/${id}/playback`, p, keepalive),
   backfillKeywords: () => request<{ queued: number }>("POST", "/api/library/keywords/backfill"),
+  queue: (id: string) => request<Doc>("POST", `/api/documents/${id}/queue`),
+  zotero: () => request<ZoteroStatus>("GET", "/api/zotero"),
+  zoteroSync: () => request<{ queued: boolean }>("POST", "/api/zotero/sync"),
   settings: () => request<Settings>("GET", "/api/settings"),
   saveSettings: (changes: Partial<Settings["values"]>) => request<Settings>("PUT", "/api/settings", changes),
   me: () => request<{ user: string; logout_url: string }>("GET", "/api/me"),

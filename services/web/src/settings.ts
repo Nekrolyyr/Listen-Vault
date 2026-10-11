@@ -99,6 +99,43 @@ export function settingsView(): View {
     }
   });
 
+  const zoteroBox = h("fieldset", { class: "zotero" }, h("legend", {}, "Zotero"), h("p", { class: "pane-message" }, "Loading…"));
+
+  async function loadZotero(): Promise<void> {
+    try {
+      const z = await api.zotero();
+      const sync = async () => {
+        try {
+          await api.zoteroSync();
+          toast("Sync started");
+        } catch (err) {
+          toast((err as Error).message, "error");
+        }
+        loadZotero();
+      };
+      zoteroBox.replaceChildren(
+        h("legend", {}, "Zotero"),
+        h(
+          "p",
+          { class: "hint" },
+          z.configured
+            ? `Every item of the library is listed; papers tagged “${z.queue_tag}” are processed. ${z.catalogued} listed, not queued.`
+            : "Not connected. Set ZOTERO_USER_ID and ZOTERO_API_KEY in .env, then restart the api and worker.",
+        ),
+        ...(z.last_synced_at ? [h("p", { class: "hint" }, `Last sync ${new Date(z.last_synced_at).toLocaleString()}`)] : []),
+        ...(z.last_error ? [h("p", { class: "hint" }, `Last sync failed: ${z.last_error}`)] : []),
+        h("button", { type: "button", class: "btn", disabled: !z.configured || z.syncing, onclick: sync },
+          z.syncing ? "Syncing…" : "Sync now"),
+      );
+    } catch (e) {
+      zoteroBox.replaceChildren(h("legend", {}, "Zotero"), h("p", { class: "hint" }, (e as Error).message));
+    }
+  }
+
   api.settings().then(render, (e) => toast((e as Error).message, "error"));
-  return { el: h("section", { class: "settings" }, h("h1", {}, "Settings"), form), title: "Settings" };
+  loadZotero();
+  return {
+    el: h("section", { class: "settings" }, h("h1", {}, "Settings"), form, zoteroBox),
+    title: "Settings",
+  };
 }

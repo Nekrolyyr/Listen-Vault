@@ -36,10 +36,12 @@ SELECT d.*, j.state AS job_state, j.stage AS job_stage, j.progress_done, j.progr
        j.error AS job_error, j.run_after AS job_run_after,
        (SELECT count(*) FROM chapters c WHERE c.document_id = d.id) AS chapter_count,
        (SELECT count(*) FROM chapters c WHERE c.document_id = d.id AND c.audio_file IS NOT NULL) AS ready_count,
-       p.chapter_idx AS play_chapter, p.position_s AS play_position
+       p.chapter_idx AS play_chapter, p.position_s AS play_position,
+       (z.document_id IS NOT NULL) AS from_zotero
 FROM documents d
 LEFT JOIN LATERAL (SELECT * FROM jobs WHERE document_id = d.id ORDER BY id DESC LIMIT 1) j ON true
 LEFT JOIN playback p ON p.document_id = d.id
+LEFT JOIN zotero_links z ON z.document_id = d.id
 """
 SORTS = {
     "added": "d.created_at DESC",
@@ -84,6 +86,7 @@ def _doc_out(r: dict[str, Any]) -> dict[str, Any]:
         out["chapters_ready"] = r["ready_count"]
         out["playback"] = None if r["play_chapter"] is None else {
             "chapter_idx": r["play_chapter"], "position_s": r["play_position"]}
+        out["from_zotero"] = r["from_zotero"]
     return out
 
 
@@ -210,6 +213,42 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
                 "SELECT kind, term FROM document_keywords WHERE document_id = %s ORDER BY weight DESC, term",
                 (doc_id,)).fetchall())
         return out
+
+    @app.post("/api/documents/{doc_id}/queue", status_code=202)
+    def queue_document(request: Request, doc_id: UUID):
+        """Start processing a catalogued item (a Zotero entry that is not queued yet)."""
+        with pool(request).connection() as conn, conn.transaction():
+            row = get_doc(conn, doc_id)
+            if row["status"] != "catalogued":
+                raise HTTPException(409, "This item is already queued or processed")
+            if not (row["source_type"] == "pdf" or row["source_url"]):
+                raise HTTPException(422, "This item has no PDF or link in Zotero to process")
+            jobs.enqueue(conn, doc_id)
+            return _doc_out(get_doc(conn, doc_id))
+
+    @app.get("/api/zotero")
+    def zotero_status(request: Request):
+        with pool(request).connection() as conn:
+            state = conn.execute("SELECT * FROM zotero_state WHERE id = 1").fetchone()
+            catalogued = conn.execute("SELECT count(*) AS n FROM documents WHERE status = 'catalogued'").fetchone()["n"]
+            syncing = conn.execute("SELECT 1 FROM jobs WHERE kind = 'zotero_sync' AND state IN ('queued', 'running')"
+                                   ).fetchone() is not None
+        return {
+            "configured": settings.zotero_configured,
+            "queue_tag": settings.zotero_queue_tag,
+            "last_synced_at": state["last_synced_at"],
+            "last_error": state["last_error"],
+            "catalogued": catalogued,
+            "syncing": syncing,
+        }
+
+    @app.post("/api/zotero/sync", status_code=202)
+    def zotero_sync(request: Request):
+        if not settings.zotero_configured:
+            raise HTTPException(503, "Zotero is not configured: set ZOTERO_USER_ID and ZOTERO_API_KEY in .env")
+        with pool(request).connection() as conn, conn.transaction():
+            job = jobs.enqueue_library(conn, "zotero_sync")
+        return {"queued": job is not None}
 
     @app.post("/api/library/keywords/backfill", status_code=202)
     def backfill_keywords(request: Request):

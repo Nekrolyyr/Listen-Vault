@@ -11,8 +11,14 @@ const STAGES: Record<string, string> = {
   synthesis: "Generating audio",
 };
 
+/** Actions that re-run processing make no sense while it is running or before the item was queued. */
+function notProcessed(doc: Doc): boolean {
+  return doc.status === "queued" || doc.status === "processing" || doc.status === "catalogued";
+}
+
 function statusOf(doc: Doc): { label: string; tone: string; progress: number | null; detail?: string } {
   const job = doc.job;
+  if (doc.status === "catalogued") return { label: "In Zotero · not queued", tone: "wait", progress: null };
   if (doc.status === "failed") return { label: "Failed", tone: "bad", progress: null, detail: doc.error ?? undefined };
   if (doc.status === "queued") {
     const retry = job?.error ? `Retrying soon: ${job.error}` : undefined;
@@ -109,6 +115,9 @@ export function libraryView(): View {
       } else if (action === "rerun-start") {
         await api.rerun(doc.id, "start");
         toast("Processing starts over.");
+      } else if (action === "queue") {
+        await api.queue(doc.id);
+        toast("Queued for processing.");
       }
     } catch (e) {
       toast((e as Error).message, "error");
@@ -128,9 +137,9 @@ export function libraryView(): View {
         "div",
         { class: "menu-items", role: "menu" },
         h("button", { type: "button", role: "menuitem", onclick: () => act(doc, "listened") }, icon("check"), doc.listened ? "Mark as not listened" : "Mark as listened"),
-        h("button", { type: "button", role: "menuitem", onclick: () => act(doc, "rerun-audio"), disabled: doc.status === "queued" || doc.status === "processing" }, icon("refresh"), "Regenerate audio"),
-        h("button", { type: "button", role: "menuitem", onclick: () => act(doc, "rerun-chapters"), disabled: doc.status === "queued" || doc.status === "processing" }, icon("refresh"), "Rebuild chapters"),
-        h("button", { type: "button", role: "menuitem", onclick: () => act(doc, "rerun-start"), disabled: doc.status === "queued" || doc.status === "processing" }, icon("refresh"), "Process from scratch"),
+        h("button", { type: "button", role: "menuitem", onclick: () => act(doc, "rerun-audio"), disabled: notProcessed(doc) }, icon("refresh"), "Regenerate audio"),
+        h("button", { type: "button", role: "menuitem", onclick: () => act(doc, "rerun-chapters"), disabled: notProcessed(doc) }, icon("refresh"), "Rebuild chapters"),
+        h("button", { type: "button", role: "menuitem", onclick: () => act(doc, "rerun-start"), disabled: notProcessed(doc) }, icon("refresh"), "Process from scratch"),
         h("button", { type: "button", role: "menuitem", class: "danger", onclick: () => act(doc, "delete") }, icon("trash"), "Delete"),
       ),
     );
@@ -152,6 +161,7 @@ export function libraryView(): View {
           h("span", { class: `chip ${s.tone}` }, s.label),
           doc.ocr_applied ? h("span", { class: "chip" }, "OCR") : null,
           doc.listened ? h("span", { class: "chip" }, "Listened") : null,
+          doc.from_zotero ? h("span", { class: "chip" }, "Zotero") : null,
           doc.status === "processing" && doc.chapters_ready > 0
             ? h("a", { href: `/doc/${doc.id}`, "data-link": true, class: "chip link" }, `${doc.chapters_ready} chapters playable`)
             : null,
@@ -162,7 +172,9 @@ export function libraryView(): View {
       h(
         "div",
         { class: "doc-actions" },
-        doc.status === "failed"
+        doc.status === "catalogued"
+          ? h("button", { type: "button", class: "btn small primary", onclick: () => act(doc, "queue") }, "Queue")
+          : doc.status === "failed"
           ? h("button", { type: "button", class: "btn small", onclick: () => act(doc, "rerun-start") }, "Retry")
           : openable
             ? h("a", { href: `/doc/${doc.id}`, "data-link": true, class: "btn small primary" }, doc.playback ? "Resume" : "Open")
