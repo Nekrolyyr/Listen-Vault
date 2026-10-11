@@ -78,7 +78,7 @@ All commands run on the vault host from `/home/doctor/docker/listen-vault`.
   citation. Answers take about 30 seconds.
 - **Library:** the dashboard and filter column narrow the list. Groups, Graph and Timeline show related papers
   by their keywords; the Timeline shows a topic (or keyword) over the years. Topics are rebuilt from Settings.
-- **Zotero:** set `ZOTERO_USER_ID` and `ZOTERO_API_KEY` in `.env`. Every item is imported and listed, and
+- **Zotero:** set `ZOTERO_API_KEY` in `.env` (the numeric user ID is read from the key). Every item is imported and listed, and
   nothing is processed automatically: queue a paper from the library, or use "Process all listed papers" in
   Settings. PDFs need Zotero's file storage (not WebDAV).
 - **Upgrading an existing library:** "Process from scratch" gives a paper the abstract overview and the exact

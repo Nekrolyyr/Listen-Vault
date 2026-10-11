@@ -449,7 +449,7 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
     @app.post("/api/zotero/sync", status_code=202)
     def zotero_sync(request: Request):
         if not settings.zotero_configured:
-            raise HTTPException(503, "Zotero is not configured: set ZOTERO_USER_ID and ZOTERO_API_KEY in .env")
+            raise HTTPException(503, "Zotero is not configured: set ZOTERO_API_KEY in .env")
         with pool(request).connection() as conn, conn.transaction():
             job = jobs.enqueue_library(conn, "zotero_sync")
         return {"queued": job is not None}

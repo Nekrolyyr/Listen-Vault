@@ -120,7 +120,7 @@ export function settingsView(): View {
           { class: "hint" },
           z.configured
             ? `Every item of the library is imported and listed. Nothing is processed automatically. ${z.catalogued} listed, not processed.`
-            : "Not connected. Set ZOTERO_USER_ID and ZOTERO_API_KEY in .env, then restart the api and worker.",
+            : "Not connected. Set ZOTERO_API_KEY in .env (create it at zotero.org/settings/keys), then restart the api and worker.",
         ),
         ...(z.last_synced_at ? [h("p", { class: "hint" }, `Last sync ${new Date(z.last_synced_at).toLocaleString()}`)] : []),
         ...(z.last_error ? [h("p", { class: "hint" }, `Last sync failed: ${z.last_error}`)] : []),

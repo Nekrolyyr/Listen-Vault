@@ -152,3 +152,22 @@ def test_fetch_uses_the_zotero_pdf(settings, pool, monkeypatch):
     assert paths.source_pdf.read_bytes() == PDF
     with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
         assert conn.execute("SELECT has_pdf, source_type FROM documents").fetchone() == {"has_pdf": True, "source_type": "pdf"}
+
+
+def test_user_id_is_looked_up_from_the_api_key(settings, pool):
+    """The library path needs the numeric userID; a username is refused by Zotero ("Invalid user ID")."""
+    seen = []
+
+    def handler(request: httpx.Request):
+        seen.append(request.url.path)
+        if request.url.path == "/keys/current":
+            return httpx.Response(200, json={"userID": 19247461, "username": "someone"})
+        assert request.url.path == "/users/19247461/items"
+        return httpx.Response(200, json=[PAPER], headers={"Last-Modified-Version": "42"})
+
+    http = httpx.Client(base_url=zotero.API_URL, transport=httpx.MockTransport(handler),
+                        headers={"Zotero-API-Key": "secret", "Zotero-API-Version": "3"})
+    client = zotero.ZoteroClient(None, "secret", http=http)
+    counts = zotero.sync(pool, _settings(settings), client)
+    assert counts["items"] == 1
+    assert seen == ["/keys/current", "/users/19247461/items"]  # looked up once, then used

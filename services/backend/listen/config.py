@@ -25,7 +25,7 @@ class Settings:
     llm_wait_s: float = 300
     lexicon_path: Path = Path("/app/config/normalizer/lexicon.yaml")
     # Zotero (optional): every item is catalogued; processing is always started by hand
-    zotero_user_id: str = ""
+    zotero_user_id: str = ""      # optional: looked up from the API key when empty
     zotero_api_key: str = ""
     zotero_sync_s: float = 1800
 
@@ -35,7 +35,7 @@ class Settings:
 
     @property
     def zotero_configured(self) -> bool:
-        return bool(self.zotero_user_id and self.zotero_api_key)
+        return bool(self.zotero_api_key)
 
 
 def load() -> Settings:

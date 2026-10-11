@@ -32,9 +32,11 @@ class ZoteroError(Exception):
 
 
 class ZoteroClient:
-    def __init__(self, user_id: str, api_key: str, http: httpx.Client | None = None,
+    def __init__(self, user_id: str | None, api_key: str, http: httpx.Client | None = None,
                  storage: httpx.Client | None = None):
-        self.user_id = user_id
+        # Library paths need the numeric user ID, which is not the username. When it is not given, the API key
+        # tells it: GET /keys/current returns "userID".
+        self.user_id = user_id or None
         self.http = http or httpx.Client(base_url=API_URL, timeout=60,
                                          headers={"Zotero-API-Key": api_key, "Zotero-API-Version": "3"})
         self.storage = storage or httpx.Client(timeout=300)  # no API key here
@@ -52,13 +54,18 @@ class ZoteroClient:
             raise ZoteroError(f"Zotero returned HTTP {resp.status_code}")
         return resp
 
+    def user(self) -> str:
+        if self.user_id is None:
+            self.user_id = str(self._get("/keys/current").json()["userID"])
+        return self.user_id
+
     def changes_since(self, version: int) -> tuple[list[dict[str, Any]], int]:
         """Items (and attachments) changed after `version`, and the library version to remember afterwards."""
         items: list[dict[str, Any]] = []
         start = 0
         library_version = version
         while True:
-            resp = self._get(f"/users/{self.user_id}/items",
+            resp = self._get(f"/users/{self.user()}/items",
                              {"since": version, "format": "json", "limit": PAGE, "start": start})
             if start == 0:
                 # the version at the start of the sync: anything changed while paging is fetched next time
@@ -70,7 +77,7 @@ class ZoteroClient:
             start += PAGE
 
     def download_pdf(self, attachment_key: str) -> bytes:
-        path = f"/users/{self.user_id}/items/{attachment_key}/file"
+        path = f"/users/{self.user()}/items/{attachment_key}/file"
         try:
             resp = self.http.get(path, follow_redirects=False)
             if resp.status_code in (301, 302, 303, 307, 308):
