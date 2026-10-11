@@ -106,7 +106,7 @@ def test_keywords_backfill_queues_ready_documents_without_keywords(client, setti
 
 def test_zotero_status_and_queue_of_catalogued_items(client, settings):
     status = client.get("/api/zotero", headers=AUTH).json()
-    assert status["configured"] is False and status["queue_tag"] == "listen-queue"
+    assert status["configured"] is False
     assert client.post("/api/zotero/sync", headers=AUTH).status_code == 503
     with psycopg.connect(settings.database_url, autocommit=True) as conn:
         with_link = conn.execute("INSERT INTO documents (source_type, source_url, title, status) "
@@ -249,3 +249,17 @@ def test_timeline_and_topics(client, settings):
     assert listed == [{"id": topic_id, "name": "Sleep and memory", "terms": ["sleep", "memory"], "documents": 4}]
     by_topic = client.get(f"/api/library/timeline?topic={topic_id}", headers=AUTH).json()
     assert by_topic["label"] == "Sleep and memory" and len(by_topic["items"]) == 4
+
+
+def test_queue_all_catalogued_is_manual_and_skips_unlinked_items(client, settings):
+    with psycopg.connect(settings.database_url, autocommit=True) as conn:
+        conn.execute("INSERT INTO documents (source_type, title, status) VALUES ('pdf', 'With PDF', 'catalogued')")
+        conn.execute("INSERT INTO documents (source_type, source_url, title, status) "
+                     "VALUES ('url', 'https://doi.org/10.1/x', 'With link', 'catalogued')")
+        conn.execute("INSERT INTO documents (source_type, title, status) VALUES ('url', 'Nothing', 'catalogued')")
+    with psycopg.connect(settings.database_url, autocommit=True) as conn:
+        assert conn.execute("SELECT count(*) FROM jobs").fetchone()[0] == 0  # importing queued nothing
+    assert client.post("/api/zotero/queue-all", headers=AUTH).json() == {"queued": 2}
+    with psycopg.connect(settings.database_url, autocommit=True) as conn:
+        statuses = dict(conn.execute("SELECT title, status FROM documents").fetchall())
+    assert statuses == {"With PDF": "queued", "With link": "queued", "Nothing": "catalogued"}

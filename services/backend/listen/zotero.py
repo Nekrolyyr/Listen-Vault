@@ -1,4 +1,4 @@
-"""Zotero integration: every item of the personal library is catalogued; papers tagged for the queue are processed.
+"""Zotero integration: every item of the personal library is catalogued. Nothing is processed automatically.
 
 The Zotero Web API (v3) is read incrementally: `since=<library version>` returns what changed, attachments
 included. Catalogued items carry the metadata (title, authors, date, abstract, DOI); a PDF attachment is only
@@ -15,7 +15,6 @@ import httpx
 from psycopg import Connection
 from psycopg_pool import ConnectionPool
 
-from . import jobs
 from .config import Settings
 
 log = logging.getLogger(__name__)
@@ -94,8 +93,9 @@ def _name(creator: dict[str, Any]) -> str:
 
 
 def _catalogue(conn: Connection, key: str, version: int, data: dict[str, Any], pdf_key: str | None,
-               tags: list[str], collections: list[str], queue_tag: str) -> str:
-    """Create or refresh the document of a Zotero item. Returns "queued", "catalogued" or "kept"."""
+               tags: list[str], collections: list[str]) -> str:
+    """Create or refresh the document of a Zotero item. Nothing is queued: processing is always started by hand.
+    Returns "catalogued" (new or still not processed) or "kept" (already processed)."""
     title = (data.get("title") or "").strip() or "Untitled"
     authors = [n for c in data.get("creators", []) if c.get("creatorType") == "author" and (n := _name(c))]
     published = (data.get("date") or "").strip() or None
@@ -134,9 +134,6 @@ def _catalogue(conn: Connection, key: str, version: int, data: dict[str, Any], p
             "synced_at = now() WHERE document_id = %s",
             (version, pdf_key, tags, collections, doc_id),
         )
-    if status == "catalogued" and queue_tag in tags and (pdf_key or url):
-        jobs.enqueue(conn, doc_id)
-        return "queued"
     return "catalogued" if status == "catalogued" else "kept"
 
 
@@ -160,18 +157,14 @@ def sync(pool: ConnectionPool, settings: Settings, client: ZoteroClient | None =
                 and d.get("linkMode") in PDF_LINKS and d.get("parentItem"):
             pdfs.setdefault(d["parentItem"], i["key"])
 
-    counts = {"items": len(papers), "queued": 0, "catalogued": 0}
+    counts = {"items": len(papers), "catalogued": 0}
     with pool.connection() as conn, conn.transaction():
         for i in items:
             if i["key"] in papers:
                 d = papers[i["key"]]
                 tags = [t["tag"] for t in d.get("tags", []) if t.get("tag")]
                 collections = list(d.get("collections", []))
-                outcome = _catalogue(conn, i["key"], i["version"], d, pdfs.get(i["key"]), tags, collections,
-                                     settings.zotero_queue_tag)
-                if outcome == "queued":
-                    counts["queued"] += 1
-                elif outcome == "catalogued":
+                if _catalogue(conn, i["key"], i["version"], d, pdfs.get(i["key"]), tags, collections) == "catalogued":
                     counts["catalogued"] += 1
         # a PDF attached to an item that did not change itself
         for parent, att in pdfs.items():

@@ -263,7 +263,7 @@ network graph, topic timeline). Decisions from the user:
 | D2 | Figures and tables are text-only: caption, table cells and the sentences that cite them, summarized by the LLM. Figure images are not extracted. |
 | D3 | Chapter intros removed. The overview track reads the abstract. |
 | D4 | Topics are hybrid: deterministic clustering of keyword co-occurrence; the LLM names each cluster and checks its members in batches. |
-| D5 | Zotero: personal library, papers queued by tag `listen-queue`. PDFs need Zotero cloud file storage. |
+| D5 | Zotero: personal library. Every item is imported as catalogued; nothing is processed automatically, processing is started by hand (per paper, or all at once). PDFs need Zotero cloud file storage. |
 
 ### Phases and migrations
 
@@ -294,7 +294,7 @@ Each phase has its own commit. Migrations are applied in file order at start-up 
 - Keyword extraction and figure summaries add LLM time per paper (roughly 1–4 minutes); they run before chapter naming.
 - Topic clustering and the groups are quadratic in the number of terms or papers. Topics use the 300 most common
   keywords; a large library (thousands of papers) would need caching.
-- Papers processed before this round keep their old overview until "Rebuild chapters"; PDF sentence positions need
+- Papers processed before this round keep their old overview and need "Process from scratch" for the overview and PDF sentence positions;
   "Process from scratch".
 - A Zotero item deleted in Listen is re-catalogued the next time it changes in Zotero.
 

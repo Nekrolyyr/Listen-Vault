@@ -429,12 +429,22 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
                                    ).fetchone() is not None
         return {
             "configured": settings.zotero_configured,
-            "queue_tag": settings.zotero_queue_tag,
             "last_synced_at": state["last_synced_at"],
             "last_error": state["last_error"],
             "catalogued": catalogued,
             "syncing": syncing,
         }
+
+    @app.post("/api/zotero/queue-all", status_code=202)
+    def zotero_queue_all(request: Request):
+        """Start processing every catalogued item that has a PDF or a link. Only ever started by hand."""
+        with pool(request).connection() as conn, conn.transaction():
+            ids = [r["id"] for r in conn.execute(
+                "SELECT id FROM documents WHERE status = 'catalogued' AND (source_type = 'pdf' OR source_url IS NOT NULL) "
+                "ORDER BY title")]
+            for doc_id in ids:
+                jobs.enqueue(conn, doc_id)
+        return {"queued": len(ids)}
 
     @app.post("/api/zotero/sync", status_code=202)
     def zotero_sync(request: Request):

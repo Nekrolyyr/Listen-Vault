@@ -78,11 +78,11 @@ All commands run on the vault host from `/home/doctor/docker/listen-vault`.
   citation. Answers take about 30 seconds.
 - **Library:** the dashboard and filter column narrow the list. Groups, Graph and Timeline show related papers
   by their keywords; the Timeline shows a topic (or keyword) over the years. Topics are rebuilt from Settings.
-- **Zotero:** set `ZOTERO_USER_ID` and `ZOTERO_API_KEY` in `.env`. Every item is listed; papers tagged
-  `listen-queue` are processed automatically, others can be queued from the library. PDFs need Zotero's
-  file storage (not WebDAV).
-- **Upgrading an existing library:** "Rebuild chapters" gives a paper the abstract overview; "Process from
-  scratch" also gives the reader exact sentence positions on the PDF.
+- **Zotero:** set `ZOTERO_USER_ID` and `ZOTERO_API_KEY` in `.env`. Every item is imported and listed, and
+  nothing is processed automatically: queue a paper from the library, or use "Process all listed papers" in
+  Settings. PDFs need Zotero's file storage (not WebDAV).
+- **Upgrading an existing library:** "Process from scratch" gives a paper the abstract overview and the exact
+  sentence positions on the PDF.
 
 Typical timing for a 15-page paper: OCR (scans only) under a minute, structure ~30 s, keywords and summaries
 ~2–4 min, audio ~12 min for ~35 min of speech.

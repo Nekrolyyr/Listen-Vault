@@ -158,9 +158,6 @@ export function libraryView(): View {
       } else if (action === "rerun-audio") {
         await api.rerun(doc.id, "synthesis");
         toast("Audio will be generated again with the current voice settings.");
-      } else if (action === "rerun-chapters") {
-        await api.rerun(doc.id, "chapters");
-        toast("Chapters will be rebuilt.");
       } else if (action === "rerun-start") {
         await api.rerun(doc.id, "start");
         toast("Processing starts over.");
@@ -192,7 +189,6 @@ export function libraryView(): View {
         { class: "menu-items", role: "menu" },
         h("button", { type: "button", role: "menuitem", onclick: () => act(doc, "listened") }, icon("check"), doc.listened ? "Mark as not listened" : "Mark as listened"),
         h("button", { type: "button", role: "menuitem", onclick: () => act(doc, "rerun-audio"), disabled: notProcessed(doc) }, icon("refresh"), "Regenerate audio"),
-        h("button", { type: "button", role: "menuitem", onclick: () => act(doc, "rerun-chapters"), disabled: notProcessed(doc) }, icon("refresh"), "Rebuild chapters"),
         h("button", { type: "button", role: "menuitem", onclick: () => act(doc, "rerun-start"), disabled: notProcessed(doc) }, icon("refresh"), "Process from scratch"),
         h("button", { type: "button", role: "menuitem", class: "danger", onclick: () => act(doc, "delete") }, icon("trash"), "Delete"),
       ),

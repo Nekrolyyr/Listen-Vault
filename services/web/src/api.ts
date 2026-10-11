@@ -182,7 +182,6 @@ export interface Settings {
 
 export interface ZoteroStatus {
   configured: boolean;
-  queue_tag: string;
   last_synced_at: string | null;
   last_error: string | null;
   catalogued: number;
@@ -264,6 +263,7 @@ export const api = {
   ask: (id: string, question: string) => request<Question>("POST", `/api/documents/${id}/questions`, { question }),
   zotero: () => request<ZoteroStatus>("GET", "/api/zotero"),
   zoteroSync: () => request<{ queued: boolean }>("POST", "/api/zotero/sync"),
+  zoteroQueueAll: () => request<{ queued: number }>("POST", "/api/zotero/queue-all"),
   settings: () => request<Settings>("GET", "/api/settings"),
   saveSettings: (changes: Partial<Settings["values"]>) => request<Settings>("PUT", "/api/settings", changes),
   me: () => request<{ user: string; logout_url: string }>("GET", "/api/me"),

@@ -46,16 +46,16 @@ def _client(library: list[dict], version: int = 42, storage_handler=None):
 
 
 def _settings(settings):
-    return dataclasses.replace(settings, zotero_user_id="1", zotero_api_key="secret", zotero_queue_tag="listen-queue")
+    return dataclasses.replace(settings, zotero_user_id="1", zotero_api_key="secret")
 
 
 def test_sync_catalogues_items_and_queues_tagged_papers(settings, pool):
     s = _settings(settings)
     counts = zotero.sync(pool, s, _client([PAPER, UNQUEUED, PDF_ATTACHMENT, NOTE]))
-    assert counts == {"items": 2, "queued": 1, "catalogued": 1}
+    assert counts == {"items": 2, "catalogued": 2}
     with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
         paper = conn.execute("SELECT * FROM documents WHERE title = 'Sparse heads'").fetchone()
-        assert paper["status"] == "queued" and paper["source_type"] == "pdf"
+        assert paper["status"] == "catalogued" and paper["source_type"] == "pdf"
         assert paper["authors"] == ["Ada Lovelace"] and paper["abstract"] == "Heads matter."
         assert paper["doi"] == "10.1/x" and paper["published"] == "2024"
         assert paper["source_url"] == "https://doi.org/10.1/x"
@@ -63,8 +63,8 @@ def test_sync_catalogues_items_and_queues_tagged_papers(settings, pool):
         assert book["status"] == "catalogued" and book["source_type"] == "url" and book["source_url"] is None
         link = conn.execute("SELECT * FROM zotero_links WHERE zotero_key = 'AAA'").fetchone()
         assert link["pdf_attachment"] == "PPP" and link["tags"] == ["listen-queue"] and link["collections"] == ["C1"]
-        assert conn.execute("SELECT kind, document_id FROM jobs").fetchall() == [
-            {"kind": "document", "document_id": paper["id"]}]
+        # importing never starts processing, not even for a paper with a tag
+        assert conn.execute("SELECT count(*) AS n FROM jobs").fetchone()["n"] == 0
         state = conn.execute("SELECT * FROM zotero_state").fetchone()
         assert state["last_version"] == 42 and state["last_error"] is None and state["last_synced_at"]
 
@@ -72,14 +72,11 @@ def test_sync_catalogues_items_and_queues_tagged_papers(settings, pool):
 def test_second_sync_is_incremental_and_does_not_requeue(settings, pool):
     s = _settings(settings)
     zotero.sync(pool, s, _client([PAPER, UNQUEUED, PDF_ATTACHMENT]))
-    with psycopg.connect(settings.database_url, autocommit=True) as conn:
-        conn.execute("UPDATE jobs SET state = 'done'")
-        conn.execute("UPDATE documents SET status = 'ready' WHERE title = 'Sparse heads'")
     # nothing changed since version 42
     assert zotero.sync(pool, s, _client([PAPER, UNQUEUED, PDF_ATTACHMENT], version=42)) == {
-        "items": 0, "queued": 0, "catalogued": 0}
+        "items": 0, "catalogued": 0}
     with psycopg.connect(settings.database_url) as conn:
-        assert conn.execute("SELECT count(*) FROM jobs").fetchone()[0] == 1
+        assert conn.execute("SELECT count(*) FROM jobs").fetchone()[0] == 0
 
 
 def test_sync_pages_through_large_libraries(settings, pool):
@@ -144,8 +141,10 @@ def test_fetch_uses_the_zotero_pdf(settings, pool, monkeypatch):
         base_url=zotero.API_URL, transport=httpx.MockTransport(lambda r: httpx.Response(200, content=PDF))))
     monkeypatch.setattr(zotero, "ZoteroClient", lambda *a, **k: pdf_client)
     with pool.connection() as conn:
+        doc_id = conn.execute("SELECT id FROM documents WHERE title = 'Sparse heads'").fetchone()["id"]
+        jobs.enqueue(conn, doc_id)  # what the Queue button does
+    with pool.connection() as conn:
         job = jobs.claim(conn, "test")  # the worker claims jobs before running them
-        doc_id = job["document_id"]
     from listen.storage import DocPaths
     paths = DocPaths(s.docs_dir, doc_id).ensure()
     p = pipeline_mod.Pipeline(s, pool, llm=None)

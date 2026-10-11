@@ -119,13 +119,28 @@ export function settingsView(): View {
           "p",
           { class: "hint" },
           z.configured
-            ? `Every item of the library is listed; papers tagged “${z.queue_tag}” are processed. ${z.catalogued} listed, not queued.`
+            ? `Every item of the library is imported and listed. Nothing is processed automatically. ${z.catalogued} listed, not processed.`
             : "Not connected. Set ZOTERO_USER_ID and ZOTERO_API_KEY in .env, then restart the api and worker.",
         ),
         ...(z.last_synced_at ? [h("p", { class: "hint" }, `Last sync ${new Date(z.last_synced_at).toLocaleString()}`)] : []),
         ...(z.last_error ? [h("p", { class: "hint" }, `Last sync failed: ${z.last_error}`)] : []),
         h("button", { type: "button", class: "btn", disabled: !z.configured || z.syncing, onclick: sync },
           z.syncing ? "Syncing…" : "Sync now"),
+        h("button", {
+          type: "button",
+          class: "btn",
+          disabled: !z.configured || z.catalogued === 0,
+          onclick: async () => {
+            if (!confirm(`Process ${z.catalogued} listed papers now? This downloads PDFs and runs the analysis on each.`)) return;
+            try {
+              const { queued } = await api.zoteroQueueAll();
+              toast(`${queued} papers queued for processing`);
+            } catch (err) {
+              toast((err as Error).message, "error");
+            }
+            loadZotero();
+          },
+        }, "Process all listed papers"),
       );
     } catch (e) {
       zoteroBox.replaceChildren(h("legend", {}, "Zotero"), h("p", { class: "hint" }, (e as Error).message));
