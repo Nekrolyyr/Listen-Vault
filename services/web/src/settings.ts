@@ -17,6 +17,15 @@ function voiceName(id: string): string {
 export function settingsView(): View {
   const form = h("form", { class: "settings-form" }, h("p", { class: "pane-message" }, "Loading…"));
 
+  async function backfill(): Promise<void> {
+    try {
+      const { queued } = await api.backfillKeywords();
+      toast(queued ? `${queued} papers queued for keyword extraction` : "Every paper already has keywords");
+    } catch (err) {
+      toast((err as Error).message, "error");
+    }
+  }
+
   function render(s: Settings): void {
     const v = s.values;
     const groups = Object.entries(ACCENTS).map(([prefix, label]) =>
@@ -60,6 +69,13 @@ export function settingsView(): View {
             h("option", { value: "speak", selected: v.citations === "speak" }, "Read them aloud"),
           ),
         ),
+      ),
+      h(
+        "fieldset",
+        {},
+        h("legend", {}, "Library"),
+        h("p", { class: "hint" }, "Papers added before keywords existed have none. This finds their task, methods, datasets, topics and keywords in the background."),
+        h("button", { type: "button", class: "btn", onclick: backfill }, "Extract keywords for the library"),
       ),
       h("p", { class: "hint" }, "Changes apply to newly added documents. For existing ones, choose “Regenerate audio” in the library."),
       h("div", { class: "form-actions" }, h("button", { type: "submit", class: "btn primary" }, "Save settings")),

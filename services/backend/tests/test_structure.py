@@ -101,6 +101,11 @@ class FakeLlm:
             return "Attention Pruning"
         return "The section explains how attention heads are pruned. It reports the effect on accuracy."
 
+    def complete_json(self, prompt, schema, n_predict=300):
+        self.prompts.append(prompt)
+        return {"task": "pruning", "methods": ["head pruning"], "datasets": [], "topics": ["attention"],
+                "keywords": ["transformers"]}
+
 
 def test_enricher_only_names_untitled_chapters():
     abstract = "We prune attention heads and measure accuracy."

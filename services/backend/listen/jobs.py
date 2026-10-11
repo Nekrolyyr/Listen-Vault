@@ -18,7 +18,7 @@ MAX_ATTEMPTS = 3
 RETRY_DELAYS_S = (30, 300)  # after attempt 1 and 2
 
 # Order in which the worker runs stages; "from" in job options names the first stage to redo.
-STAGES = ("fetch", "ocr", "structure", "chapters", "synthesis")
+STAGES = ("fetch", "ocr", "structure", "enrich", "chapters", "synthesis")
 
 
 def enqueue(conn: Connection, document_id: UUID | str, options: dict[str, Any] | None = None) -> int:

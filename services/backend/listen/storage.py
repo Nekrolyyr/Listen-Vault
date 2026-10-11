@@ -3,6 +3,7 @@
   source.pdf | source.html   what was uploaded or fetched
   viewer.pdf                 PDF shown in the reader (OCR'd copy for scans)
   structure.json             normalized document model
+  enriched.json              marker: search terms were extracted (their rows are in document_keywords)
   chapters.json              chapter plan (overview = abstract, LLM-written chapter titles)
   audio/<idx>.m4a            one audio file per chapter (idx 0 = overview)
 """
@@ -21,6 +22,7 @@ class DocPaths:
     source_html = property(lambda self: self.root / "source.html")
     viewer_pdf = property(lambda self: self.root / "viewer.pdf")
     structure = property(lambda self: self.root / "structure.json")
+    enriched = property(lambda self: self.root / "enriched.json")
     chapters = property(lambda self: self.root / "chapters.json")
     audio_dir = property(lambda self: self.root / "audio")
 

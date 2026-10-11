@@ -87,6 +87,23 @@ def test_rerun_conflicts_while_open(client, settings):
     assert client.post(f"/api/documents/{doc_id}/rerun", json={"stage": "bogus"}, headers=AUTH).status_code == 422
 
 
+def test_keywords_backfill_queues_ready_documents_without_keywords(client, settings):
+    doc_id = client.post("/api/documents/url", json={"url": "https://example.org/a"}, headers=AUTH).json()["id"]
+    with psycopg.connect(settings.database_url, autocommit=True) as conn:
+        conn.execute("UPDATE documents SET status = 'ready' WHERE id = %s", (doc_id,))
+        conn.execute("UPDATE jobs SET state = 'done'")
+    assert client.post("/api/library/keywords/backfill", headers=AUTH).json() == {"queued": 1}
+    with psycopg.connect(settings.database_url, autocommit=True) as conn:
+        options = conn.execute("SELECT options FROM jobs WHERE state = 'queued'").fetchone()[0]
+        assert options == {"from": "enrich"}
+        conn.execute("INSERT INTO document_keywords (document_id, kind, term, source) VALUES (%s, 'topic', 'sleep', 'llm')",
+                     (doc_id,))
+    # already has keywords and an open job: nothing more to queue
+    assert client.post("/api/library/keywords/backfill", headers=AUTH).json() == {"queued": 0}
+    detail = client.get(f"/api/documents/{doc_id}", headers=AUTH).json()
+    assert detail["keywords"]["topic"] == ["sleep"] and detail["keywords"]["task"] == []
+
+
 def test_playback_and_settings(client):
     doc_id = client.post("/api/documents/url", json={"url": "https://example.org/a"}, headers=AUTH).json()["id"]
     assert client.get(f"/api/documents/{doc_id}/playback", headers=AUTH).json()["position_s"] == 0

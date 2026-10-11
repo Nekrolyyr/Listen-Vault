@@ -6,7 +6,8 @@ const STAGES: Record<string, string> = {
   fetch: "Fetching",
   ocr: "Running OCR",
   structure: "Reading the structure",
-  chapters: "Writing chapter summaries",
+  enrich: "Finding keywords",
+  chapters: "Naming chapters",
   synthesis: "Generating audio",
 };
 

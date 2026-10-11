@@ -87,6 +87,16 @@ def _doc_out(r: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+KEYWORD_KINDS = ("task", "method", "dataset", "topic", "keyword")
+
+
+def _keywords_by_kind(rows) -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {k: [] for k in KEYWORD_KINDS}
+    for r in rows:
+        out[r["kind"]].append(r["term"])
+    return out
+
+
 def _title_from_filename(name: str) -> str:
     stem = Path(name).stem
     return re.sub(r"[_\s]+", " ", stem).strip()[:300] or "Untitled PDF"
@@ -196,7 +206,23 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
                  "duration_s": c["duration_s"], "ready": c["audio_file"] is not None}
                 for c in conn.execute("SELECT * FROM chapters WHERE document_id = %s ORDER BY idx", (doc_id,))
             ]
+            out["keywords"] = _keywords_by_kind(conn.execute(
+                "SELECT kind, term FROM document_keywords WHERE document_id = %s ORDER BY weight DESC, term",
+                (doc_id,)).fetchall())
         return out
+
+    @app.post("/api/library/keywords/backfill", status_code=202)
+    def backfill_keywords(request: Request):
+        """Queue keyword extraction for ready papers that have no keywords yet (e.g. from before it existed)."""
+        with pool(request).connection() as conn, conn.transaction():
+            ids = [r["id"] for r in conn.execute(
+                "SELECT d.id FROM documents d WHERE d.status = 'ready' "
+                "AND NOT EXISTS (SELECT 1 FROM document_keywords k WHERE k.document_id = d.id) "
+                "AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.document_id = d.id AND j.state IN ('queued', 'running'))"
+            )]
+            for doc_id in ids:
+                jobs.enqueue(conn, doc_id, {"from": "enrich"})
+        return {"queued": len(ids)}
 
     @app.patch("/api/documents/{doc_id}")
     def patch_document(request: Request, doc_id: UUID, body: DocPatch):

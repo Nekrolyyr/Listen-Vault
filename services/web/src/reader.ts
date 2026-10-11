@@ -17,6 +17,7 @@ export function readerView(id: string): View {
   let currentSentence: Sentence | null = null;
 
   const head = h("div", { class: "reader-head" });
+  const keywordBar = h("div", { class: "keyword-bar", "aria-label": "Keywords" });
   const docPane = h("div", { class: "doc-pane" }, h("p", { class: "pane-message" }, "Loading…"));
   const nowReading = h("div", { class: "now-reading", "aria-live": "off" });
   const chapterList = h("ol", { class: "chapter-list" });
@@ -117,6 +118,9 @@ export function readerView(id: string): View {
       ),
       ...(doc.source_url ? [h("a", { href: doc.source_url, target: "_blank", rel: "noopener noreferrer", class: "btn small" }, "Source")] : []),
     );
+    const terms = [...doc.keywords.task, ...doc.keywords.method, ...doc.keywords.topic, ...doc.keywords.keyword];
+    keywordBar.replaceChildren(...terms.slice(0, 14).map((t) => h("span", { class: "chip" }, t)));
+    keywordBar.hidden = terms.length === 0;
   }
 
   function renderChapters(): void {
@@ -271,7 +275,7 @@ export function readerView(id: string): View {
   };
   document.addEventListener("keydown", onKey);
 
-  const el = h("section", { class: "reader" }, head, tabs, body, bar);
+  const el = h("section", { class: "reader" }, head, keywordBar, tabs, body, bar);
   refresh(true);
   return {
     el,

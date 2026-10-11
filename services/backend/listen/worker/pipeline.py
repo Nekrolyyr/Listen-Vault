@@ -18,7 +18,7 @@ from psycopg_pool import ConnectionPool
 from .. import appsettings, jobs
 from ..config import Settings
 from ..storage import DocPaths
-from . import article, audio, boxes, chapters, fetch, grobid, ocr, pdf_fallback, sentences
+from . import article, audio, boxes, chapters, enrich, fetch, grobid, ocr, pdf_fallback, sentences
 from .audio import Segment
 from .docmodel import Document
 from .llm import LlmClient
@@ -95,7 +95,14 @@ class Pipeline:
         paths = DocPaths(self.settings.docs_dir, document_id).ensure()
         options = job.get("options") or {}
 
-        if redo := options.get("from"):
+        if (redo := options.get("from")) == "enrich":
+            # keywords only: the audio and the chapters stay as they are
+            log.info("job %s: extracting keywords again", job["id"])
+            paths.enriched.unlink(missing_ok=True)
+            with self.pool.connection() as conn, conn.transaction():
+                conn.execute("DELETE FROM document_keywords WHERE document_id = %s", (document_id,))
+                conn.execute("UPDATE jobs SET options = options - 'from' WHERE id = %s", (job["id"],))
+        elif redo:
             log.info("job %s: redoing from %s", job["id"], redo)
             paths.reset_from(redo)
             paths.ensure()
@@ -116,6 +123,7 @@ class Pipeline:
         self._fetch(job, paths)
         self._ocr(job, paths)
         doc = self._structure(job, paths)
+        self._enrich(job, paths, doc)
         plans = self._chapters(job, paths, doc, prefs)
         self._synthesize(job, paths, doc, plans, prefs)
 
@@ -181,6 +189,25 @@ class Pipeline:
                  "published": doc.published, "id": job["document_id"]},
             )
         return doc
+
+    def _enrich(self, job, paths: DocPaths, doc: Document) -> None:
+        """Search and indexing terms (see enrich.py). Skipped once done; redone by a job with from=enrich."""
+        if paths.enriched.exists():
+            return
+        self._progress(job["id"], "enrich")(0, 1)
+        llm = self.llm if self.llm is not None and self.llm.wait_ready(self.settings.llm_wait_s) else None
+        if llm is None:
+            log.warning("LLM not available; keywords come from the text only")
+        terms = enrich.extract(doc, llm)
+        with self.pool.connection() as conn, conn.transaction():
+            conn.execute("DELETE FROM document_keywords WHERE document_id = %s", (job["document_id"],))
+            with conn.cursor() as cur:
+                cur.executemany(
+                    "INSERT INTO document_keywords (document_id, kind, term, source, weight) VALUES (%s, %s, %s, %s, %s)",
+                    [(job["document_id"], t.kind, t.term, t.source, t.weight) for t in terms],
+                )
+        log.info("keywords: %d terms (%d from the LLM)", len(terms), sum(t.source == "llm" for t in terms))
+        paths.enriched.write_text("{}")
 
     def _structure_pdf(self, pdf: Path) -> Document:
         base = self.settings.grobid_url

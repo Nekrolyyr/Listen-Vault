@@ -1,6 +1,7 @@
 """Client for the llama.cpp server running BLOOMZ-7b1 (raw completion; BLOOMZ has no chat template)."""
 from __future__ import annotations
 
+import json
 import logging
 import time
 
@@ -67,3 +68,25 @@ class LlmClient:
         )
         log.debug("llm %.1fs, %s prompt tokens", time.perf_counter() - t0, out.get("tokens_evaluated"))
         return (out.get("content") or "").strip()
+
+    def complete_json(self, prompt: str, schema: dict, n_predict: int = 300) -> dict:
+        """Completion constrained by a JSON schema (llama.cpp grammar), so the output always parses."""
+        out = self._post(
+            "/completion",
+            {
+                "prompt": prompt,
+                "n_predict": n_predict,
+                "temperature": 0.2,
+                "top_p": 0.9,
+                "cache_prompt": False,
+                "stop": ["</s>"],
+                "json_schema": schema,
+            },
+        )
+        try:
+            data = json.loads(out.get("content") or "")
+        except ValueError as e:
+            raise LlmError(f"LLM returned no valid JSON: {e}") from e
+        if not isinstance(data, dict):
+            raise LlmError("LLM returned JSON that is not an object")
+        return data

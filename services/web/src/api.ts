@@ -44,8 +44,11 @@ export interface Chapter {
   ready: boolean;
 }
 
+export type KeywordKind = "task" | "method" | "dataset" | "topic" | "keyword";
+
 export interface DocDetail extends Doc {
   chapters: Chapter[];
+  keywords: Record<KeywordKind, string[]>;
 }
 
 export interface Sentence {
@@ -133,6 +136,7 @@ export const api = {
   playback: (id: string) => request<Playback>("GET", `/api/documents/${id}/playback`),
   savePlayback: (id: string, p: Playback, keepalive = false) =>
     request<{ ok: boolean }>("PUT", `/api/documents/${id}/playback`, p, keepalive),
+  backfillKeywords: () => request<{ queued: number }>("POST", "/api/library/keywords/backfill"),
   settings: () => request<Settings>("GET", "/api/settings"),
   saveSettings: (changes: Partial<Settings["values"]>) => request<Settings>("PUT", "/api/settings", changes),
   me: () => request<{ user: string; logout_url: string }>("GET", "/api/me"),

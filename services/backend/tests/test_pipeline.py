@@ -85,6 +85,8 @@ def test_pdf_end_to_end_with_fallback_structure(settings, pool, monkeypatch):
         assert all(a["end_s"] <= b["start_s"] for a, b in zip(sents, sents[1:]))
         job = conn.execute("SELECT * FROM jobs").fetchone()
         assert job["state"] == "done" and job["progress_done"] == job["progress_total"] == 3
+        kinds = {r["kind"] for r in conn.execute("SELECT kind FROM document_keywords").fetchall()}
+        assert {"task", "method", "topic", "keyword"} <= kinds  # the LLM's terms, plus frequent words
 
     # spoken text is normalized; displayed text is not
     assert "We prune heads (p less than 0.05) and keep accuracy." in engine.texts
