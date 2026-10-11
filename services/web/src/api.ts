@@ -67,6 +67,22 @@ export interface GroupDoc {
   source: "pdf" | "url";
 }
 
+export interface GraphNode extends GroupDoc {
+  group: number; // -1: no similar paper
+}
+
+export interface GraphLink {
+  source: string;
+  target: string;
+  weight: number;
+  terms: string[];
+}
+
+export interface Graph {
+  nodes: GraphNode[];
+  links: GraphLink[];
+}
+
 export interface Groups {
   groups: { label: string[]; documents: GroupDoc[] }[];
   ungrouped: GroupDoc[];
@@ -202,6 +218,7 @@ export const api = {
     request<Doc[]>("GET", `/api/documents?q=${encodeURIComponent(q)}&sort=${sort}&${filterQuery(f)}`),
   facets: (f: Filters) => request<Facets>("GET", `/api/library/facets?${filterQuery(f)}`),
   groups: (f: Filters) => request<Groups>("GET", `/api/library/groups?${filterQuery(f)}`),
+  graph: (f: Filters) => request<Graph>("GET", `/api/library/graph?${filterQuery(f)}`),
   document: (id: string) => request<DocDetail>("GET", `/api/documents/${id}`),
   addUrl: (url: string) => request<Doc>("POST", "/api/documents/url", { url }),
   patch: (id: string, changes: { title?: string; listened?: boolean }) =>

@@ -353,3 +353,15 @@ button.tile:hover { border-color: var(--accent); }
   .facets { position: static; max-height: none; }
   .dash .tile { flex-basis: 45%; }
 }
+
+/* ---- similarity graph ---- */
+.graph { display: grid; gap: 8px; }
+.graph-svg { width: 100%; height: auto; max-height: 72vh; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.graph-link { stroke: var(--muted); stroke-opacity: .35; transition: stroke-opacity .15s; }
+.graph-link.on { stroke: var(--accent); stroke-opacity: .9; }
+.graph-link.dim, .graph-node.dim { opacity: .18; }
+.graph-node { cursor: pointer; outline: none; transition: opacity .15s; }
+.graph-node circle { stroke: var(--surface); stroke-width: 2; }
+.graph-node:focus-visible circle { stroke: var(--accent); stroke-width: 3; }
+.graph-label { font-size: 11px; fill: var(--text); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; pointer-events: none; }
+.graph-hint { margin: 0; }

@@ -1,7 +1,8 @@
-import { api, type Doc, type Facets, type Filters, type GroupDoc, type Groups, NO_FILTERS } from "./api";
+import { api, type Doc, type Facets, type Filters, type Graph, type GraphNode, type GroupDoc, type Groups, NO_FILTERS } from "./api";
 import { authors, date, duration, h, icon, toast } from "./dom";
+import { graphView } from "./graph";
 import { facetColumn } from "./facets";
-import type { View } from "./main";
+import { navigate, type View } from "./main";
 
 const STAGES: Record<string, string> = {
   fetch: "Fetching",
@@ -12,10 +13,11 @@ const STAGES: Record<string, string> = {
   synthesis: "Generating audio",
 };
 
-type Mode = "list" | "groups";
+type Mode = "list" | "groups" | "graph";
 const MODES: [Mode, string][] = [
   ["list", "List"],
   ["groups", "Groups"],
+  ["graph", "Graph"],
 ];
 
 /** Actions that re-run processing make no sense while it is running or before the item was queued. */
@@ -48,10 +50,12 @@ export function libraryView(): View {
   let docs: Doc[] = [];
   let facets: Facets | null = null;
   let groups: Groups | null = null;
+  let graph: Graph | null = null;
   let filters: Filters = { ...NO_FILTERS };
   let query = "";
   let sort = localStore("sort") ?? "added";
-  let mode: Mode = (localStore("view") as Mode) === "groups" ? "groups" : "list";
+  const saved = localStore("view");
+  let mode: Mode = saved === "groups" || saved === "graph" ? saved : "list";
   let timer = 0;
   let destroyed = false;
   let lastKey = "";
@@ -87,7 +91,8 @@ export function libraryView(): View {
       docs = list;
       facets = stats;
       if (mode === "groups") groups = await api.groups(filters);
-      const key = JSON.stringify([docs, facets, groups, filters, mode]);
+      if (mode === "graph") graph = await api.graph(filters);
+      const key = JSON.stringify([docs, facets, groups, graph, filters, mode]);
       if (key !== lastKey) {
         lastKey = key;
         render();
@@ -105,6 +110,7 @@ export function libraryView(): View {
   function setFilters(next: Filters): void {
     filters = next;
     groups = null;
+    graph = null;
     load();
   }
 
@@ -284,6 +290,17 @@ export function libraryView(): View {
     );
   }
 
+  // ---------------------------------------------------------------- graph
+  function openNode(n: GraphNode): void {
+    if (n.status === "ready" || n.status === "processing") navigate(`/doc/${n.id}`);
+    else toast("This paper is not processed yet, so there is nothing to open.", "info");
+  }
+
+  function renderGraph(): HTMLElement {
+    if (!graph) return h("p", { class: "pane-message" }, "Drawing the graph…");
+    return graphView(graph, openNode);
+  }
+
   // ---------------------------------------------------------------- dashboard
   function dashboard(): HTMLElement {
     if (!facets) return h("div", { class: "dash" });
@@ -341,7 +358,8 @@ export function libraryView(): View {
           onclick: () => {
             mode = m;
             localStore("view", m);
-            if (m === "groups") groups = null;
+            groups = null;
+            graph = null;
             load();
           },
         }, label),
@@ -355,7 +373,7 @@ export function libraryView(): View {
     dashSlot.replaceChildren(dashboard());
     facetSlot.replaceChildren(facetColumn(facets, filters, setFilters));
     headSlot.replaceChildren(resultsHead());
-    bodySlot.replaceChildren(mode === "groups" ? renderGroups() : renderList());
+    bodySlot.replaceChildren(mode === "groups" ? renderGroups() : mode === "graph" ? renderGraph() : renderList());
   }
 
   // ---------------------------------------------------------------- inputs
