@@ -254,12 +254,12 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
     def chapter_sentences(request: Request, doc_id: UUID, idx: int):
         with pool(request).connection() as conn:
             rows = conn.execute(
-                "SELECT s.idx, s.text, s.page, s.start_s, s.end_s FROM sentences s "
+                "SELECT s.idx, s.text, s.page, s.start_s, s.end_s, s.rects FROM sentences s "
                 "JOIN chapters c ON c.id = s.chapter_id WHERE c.document_id = %s AND c.idx = %s ORDER BY s.idx",
                 (doc_id, idx),
             ).fetchall()
-        return [{"i": r["idx"], "text": r["text"], "page": r["page"], "start": r["start_s"], "end": r["end_s"]}
-                for r in rows]
+        return [{"i": r["idx"], "text": r["text"], "page": r["page"], "start": r["start_s"], "end": r["end_s"],
+                 "rects": r["rects"] or []} for r in rows]
 
     @app.get("/api/documents/{doc_id}/text")
     def document_text(doc_id: UUID):

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import subprocess
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -24,6 +24,7 @@ class Segment:
     spoken: str           # normalized text sent to TTS
     page: int | None
     pause: str = "sentence"
+    rects: list = field(default_factory=list)  # PDF rectangles covered by this segment (see boxes.py)
 
 
 @dataclass
@@ -32,6 +33,7 @@ class Timed:
     page: int | None
     start_s: float
     end_s: float
+    rects: list = field(default_factory=list)
 
 
 def render(engine: Engine, segments: list[Segment], out: Path,
@@ -48,7 +50,7 @@ def render(engine: Engine, segments: list[Segment], out: Path,
         start = cursor
         pieces.append(audio)
         cursor += len(audio)
-        timed.append(Timed(seg.display, seg.page, start / rate, cursor / rate))
+        timed.append(Timed(seg.display, seg.page, start / rate, cursor / rate, seg.rects))
         silence = np.zeros(int(PAUSES[seg.pause] * rate), np.float32)
         pieces.append(silence)
         cursor += len(silence)

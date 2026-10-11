@@ -77,6 +77,23 @@ def _page(el) -> int | None:
     return None
 
 
+def _boxes(el) -> list[list[float]]:
+    """Line boxes "page,x,y,w,h;page,x,y,w,h;..." from el's coords (or its first coordinated descendant)."""
+    for node in (el, *el.iter()):
+        coords = node.get("coords")
+        if coords:
+            boxes = []
+            for part in coords.split(";"):
+                try:
+                    vals = [float(v) for v in part.split(",")]
+                except ValueError:
+                    continue
+                if len(vals) == 5:
+                    boxes.append(vals)
+            return boxes
+    return []
+
+
 def _paragraph_text(p) -> str:
     """Paragraph text without bibliography references like [12] or (Smith et al., 2020)."""
     clone = etree.fromstring(etree.tostring(p))
@@ -156,7 +173,7 @@ def parse_tei(xml: bytes) -> Document:
 
     for p in root.findall(".//t:teiHeader/t:profileDesc/t:abstract//t:p", NS):
         if text := _paragraph_text(p):
-            doc.abstract.append(Paragraph(text=text, page=_page(p)))
+            doc.abstract.append(Paragraph(text=text, page=_page(p), boxes=_boxes(p)))
 
     body = root.find(".//t:text/t:body", NS)
     if body is None:
@@ -175,7 +192,7 @@ def parse_tei(xml: bytes) -> Document:
             tag = etree.QName(child).localname
             if tag == "p":
                 if text := _paragraph_text(child):
-                    section.paragraphs.append(Paragraph(text=text, page=_page(child)))
+                    section.paragraphs.append(Paragraph(text=text, page=_page(child), boxes=_boxes(child)))
             elif tag == "formula":
                 section.paragraphs.append(Paragraph(text="", page=_page(child), kind="equation"))
             elif tag == "figure":

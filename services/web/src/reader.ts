@@ -83,15 +83,19 @@ export function readerView(id: string): View {
     follow = on;
     followBtn.classList.toggle("on", on);
     followBtn.setAttribute("aria-pressed", String(on));
+    // "Follow" resumes following; while following, the label says so
+    followBtn.querySelector(".label")!.textContent = on ? "Following" : "Follow";
+    followBtn.title = on ? "Following playback. Scroll the document to browse freely." : "Resume following playback";
     if (on && currentSentence) followSentence(currentSentence);
   }
 
   function followSentence(s: Sentence): void {
-    if (pdf && s.page) pdf.showPage(s.page);
-    if (!pdf) {
-      const el = docPane.querySelector(`[data-s="${player?.chapterIdx}-${s.i}"]`);
-      el?.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (pdf) {
+      pdf.showSentence(s.page, s.rects ?? []);
+      return;
     }
+    const el = docPane.querySelector(`[data-s="${player?.chapterIdx}-${s.i}"]`);
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
   }
 
   // ---------------------------------------------------------------- rendering

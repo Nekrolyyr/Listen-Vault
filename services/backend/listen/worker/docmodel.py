@@ -11,6 +11,7 @@ class Paragraph:
     text: str
     page: int | None = None   # 1-based PDF page where the paragraph starts
     kind: str = "text"        # text | heading | figure | table | equation
+    boxes: list[list[float]] = field(default_factory=list)  # [page, x, y, w, h] per text line (GROBID coords)
 
 
 @dataclass

@@ -54,6 +54,8 @@ export interface Sentence {
   page: number | null;
   start: number;
   end: number;
+  /** [page, x, y, width, height] per line, PDF points from the top-left; empty for articles */
+  rects: [number, number, number, number, number][];
 }
 
 export interface TextChapter {

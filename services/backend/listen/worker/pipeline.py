@@ -5,6 +5,7 @@ that was interrupted resumes where it stopped. Chapters become playable one by o
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
@@ -17,7 +18,7 @@ from psycopg_pool import ConnectionPool
 from .. import appsettings, jobs
 from ..config import Settings
 from ..storage import DocPaths
-from . import article, audio, chapters, fetch, grobid, ocr, pdf_fallback, sentences
+from . import article, audio, boxes, chapters, fetch, grobid, ocr, pdf_fallback, sentences
 from .audio import Segment
 from .docmodel import Document
 from .llm import LlmClient
@@ -245,8 +246,10 @@ class Pipeline:
                 conn.execute("DELETE FROM sentences WHERE chapter_id = %s", (row["id"],))
                 with conn.cursor() as cur:
                     cur.executemany(
-                        "INSERT INTO sentences (chapter_id, idx, text, page, start_s, end_s) VALUES (%s, %s, %s, %s, %s, %s)",
-                        [(row["id"], i, t.text, t.page, t.start_s, t.end_s) for i, t in enumerate(timed)],
+                        "INSERT INTO sentences (chapter_id, idx, text, page, start_s, end_s, rects) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)",
+                        [(row["id"], i, t.text, t.page, t.start_s, t.end_s, json.dumps(t.rects) if t.rects else None)
+                         for i, t in enumerate(timed)],
                     )
                 cur = conn.execute("UPDATE chapters SET audio_file = %s, duration_s = %s WHERE id = %s",
                                    (out.name, duration, row["id"]))
@@ -263,17 +266,26 @@ class Pipeline:
 
 # ---------------------------------------------------------------- what gets spoken
 
-def _sentences(text: str, page: int | None, normalizer: Normalizer, last_pause: str = "paragraph") -> list[Segment]:
-    parts = sentences.split(text)
-    segs = [Segment(s, normalizer(s), page) for s in parts]
+def _sentences(text: str, page: int | None, normalizer: Normalizer, last_pause: str = "paragraph",
+               lines: list | None = None) -> list[Segment]:
+    """Split a paragraph into sentence segments. `lines` are the paragraph's GROBID line boxes, if known."""
+    flat = boxes.flat(text)
+    segs: list[Segment] = []
+    cursor = 0
+    for s in sentences.split(text):
+        start = flat.find(s, cursor)
+        start = cursor if start < 0 else start
+        cursor = start + len(s)
+        segs.append(Segment(s, normalizer(s), page, rects=boxes.sentence_rects(lines or [], flat, start, cursor)))
     if segs:
         segs[-1].pause = last_pause
     return segs
 
 
-def _heading(text: str, page: int | None, normalizer: Normalizer) -> Segment:
+def _heading(text: str, page: int | None, normalizer: Normalizer, lines: list | None = None) -> Segment:
     spoken = normalizer(text)
-    return Segment(text, spoken if re.search(r"[.!?]$", spoken) else spoken + ".", page, "heading")
+    return Segment(text, spoken if re.search(r"[.!?]$", spoken) else spoken + ".", page, "heading",
+                   rects=boxes.paragraph_rects(lines or [], text))
 
 
 def _byline(authors: list[str]) -> str:
@@ -305,12 +317,12 @@ def chapter_segments(plan: chapters.ChapterPlan, normalizer: Normalizer, intros:
         segs += _sentences(plan.intro, plan.start_page, normalizer)
     for p in plan.paragraphs:
         if p.kind == "heading":
-            segs.append(_heading(p.text, p.page, normalizer))
+            segs.append(_heading(p.text, p.page, normalizer, p.boxes))
         elif p.kind == "equation":
             segs.append(Segment("[Equation]", "The paper shows an equation here.", p.page, "paragraph"))
         elif p.kind in ("figure", "table"):
             name, _, caption = p.text.partition(": ")
             segs.append(Segment(p.text, normalizer(f"{name}. {caption}"), p.page, "paragraph"))
         else:
-            segs += _sentences(p.text, p.page, normalizer)
+            segs += _sentences(p.text, p.page, normalizer, lines=p.boxes)
     return [s for s in segs if re.search(r"[A-Za-z0-9]", s.spoken)]  # drop stray "]" or "*" fragments
