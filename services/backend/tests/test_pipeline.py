@@ -76,21 +76,21 @@ def test_pdf_end_to_end_with_fallback_structure(settings, pool, monkeypatch):
         assert doc["title"] == "Pruning Heads"          # filename title replaced by the parsed one
         assert doc["has_pdf"] and not doc["ocr_applied"]
         chapters = conn.execute("SELECT * FROM chapters ORDER BY idx").fetchall()
-        assert [c["title"] for c in chapters] == ["Overview", "Abstract", "Introduction", "Results"]
+        assert [c["title"] for c in chapters] == ["Overview", "Introduction", "Results"]
         assert all(c["audio_file"] and c["duration_s"] > 0 for c in chapters)
         assert doc["duration_s"] == pytest.approx(sum(c["duration_s"] for c in chapters))
         sents = conn.execute("SELECT s.* FROM sentences s JOIN chapters c ON c.id = s.chapter_id "
-                             "WHERE c.idx = 3 ORDER BY s.idx").fetchall()
+                             "WHERE c.idx = 2 ORDER BY s.idx").fetchall()
         assert sents[0]["text"] == "Results" and sents[0]["page"] == 2
         assert all(a["end_s"] <= b["start_s"] for a, b in zip(sents, sents[1:]))
         job = conn.execute("SELECT * FROM jobs").fetchone()
-        assert job["state"] == "done" and job["progress_done"] == job["progress_total"] == 4
+        assert job["state"] == "done" and job["progress_done"] == job["progress_total"] == 3
 
     # spoken text is normalized; displayed text is not
     assert "We prune heads (p less than 0.05) and keep accuracy." in engine.texts
     assert paths.viewer_pdf.exists()
     probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_name,sample_rate",
-                            "-of", "csv=p=0", str(paths.audio(3))], capture_output=True, text=True)
+                            "-of", "csv=p=0", str(paths.audio(2))], capture_output=True, text=True)
     assert probe.stdout.strip() == "aac,16000"
 
 
@@ -104,7 +104,7 @@ def test_article_and_resume_after_restart(settings, pool):
 
     class CrashingEngine(FakeEngine):
         def synth(self, text):
-            if len(self.texts) == 6:
+            if len(self.texts) == 7:  # the overview (title, byline, heading, 4 abstract sentences) is done
                 raise Crash()
             return super().synth(text)
 
@@ -179,6 +179,6 @@ def test_unpronounceable_fragments_are_dropped():
     from listen.worker.pipeline import chapter_segments
 
     plan = ch.ChapterPlan(kind="chapter", title="Results", paragraphs=[Paragraph("It works. Done.", 3), Paragraph("]", 3), Paragraph("* †", 4)])
-    segs = chapter_segments(plan, Normalizer(), intros=False)
+    segs = chapter_segments(plan, Normalizer())
     assert [s.display for s in segs] == ["Results", "It works.", "Done."]
     assert Normalizer()("It works. ] * Done †.") == "It works. Done."

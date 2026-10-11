@@ -206,9 +206,9 @@ class Pipeline:
             plans = chapters.plan(doc)
             llm = self.llm if self.llm is not None and self.llm.wait_ready(self.settings.llm_wait_s) else None
             if llm is None:
-                log.warning("LLM not available; chapter intros and overview will be extractive")
+                log.warning("LLM not available; untitled chapters get generic titles")
             enricher = chapters.Enricher(llm, self._progress(job["id"], "chapters"))
-            enricher.run(doc, plans, intros=prefs["chapter_intros"])
+            enricher.run(plans)
             log.info("chaptering: %d chapters, %d LLM calls, %d fell back", len(plans), enricher.calls,
                      enricher.failures)
             chapters.save(paths.chapters, plans)
@@ -240,7 +240,7 @@ class Pipeline:
                 continue
             engine = self._engine_for(prefs)
             segments = (overview_segments(doc, plans[0], normalizer) if row["idx"] == 0
-                        else chapter_segments(plans[row["idx"]], normalizer, prefs["chapter_intros"]))
+                        else chapter_segments(plans[row["idx"]], normalizer))
             duration, timed = audio.render(engine, segments, out, lambda: report(n, total))
             with self.pool.connection() as conn, conn.transaction():
                 conn.execute("DELETE FROM sentences WHERE chapter_id = %s", (row["id"],))
@@ -304,17 +304,14 @@ def overview_segments(doc: Document, overview: chapters.ChapterPlan, normalizer:
         segs.append(_heading(doc.title, 1, normalizer))
     if byline := _byline(doc.authors):
         segs.append(Segment(byline, normalizer(byline), 1, "paragraph"))
-    segs.append(_heading("Overview", 1, normalizer))
+    segs.append(_heading("Abstract" if overview.intro_source == "abstract" else "Overview", 1, normalizer))
     if overview.intro:
         segs += _sentences(overview.intro, None, normalizer)
     return [s for s in segs if re.search(r"[A-Za-z0-9]", s.spoken)]
 
 
-def chapter_segments(plan: chapters.ChapterPlan, normalizer: Normalizer, intros: bool) -> list[Segment]:
+def chapter_segments(plan: chapters.ChapterPlan, normalizer: Normalizer) -> list[Segment]:
     segs = [_heading(plan.title or "Untitled section", plan.start_page, normalizer)]
-    if intros and plan.intro:
-        segs.append(Segment("In brief:", "In brief.", plan.start_page, "sentence"))
-        segs += _sentences(plan.intro, plan.start_page, normalizer)
     for p in plan.paragraphs:
         if p.kind == "heading":
             segs.append(_heading(p.text, p.page, normalizer, p.boxes))

@@ -49,7 +49,6 @@ export function settingsView(): View {
         "fieldset",
         {},
         h("legend", {}, "Reading"),
-        h("label", { class: "check" }, h("input", { type: "checkbox", name: "chapter_intros", checked: v.chapter_intros }), h("span", {}, "Start each chapter with a short summary (written by the local language model)")),
         h(
           "label",
           { class: "field" },
@@ -76,7 +75,6 @@ export function settingsView(): View {
         voice: String(data.get("voice")),
         speech_speed: Number(data.get("speech_speed")),
         citations: data.get("citations") as Settings["values"]["citations"],
-        chapter_intros: data.get("chapter_intros") === "on",
       });
       render(saved);
       toast("Settings saved");

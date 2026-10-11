@@ -1,8 +1,8 @@
-"""Turn a Document into chapters, then let BLOOMZ-7b1 add intros, missing titles and an overview.
+"""Turn a Document into chapters. The overview reads the abstract; BLOOMZ-7b1 only names untitled sections.
 
-Structure comes from the document itself (GROBID or HTML headings), never from the LLM: BLOOMZ has
-a 2,048-token context and prefers short answers, so it is only asked for short pieces of text.
-Every LLM answer is checked; a failed check falls back to an extractive summary.
+Structure comes from the document itself (GROBID or HTML headings), never from the LLM. BLOOMZ-7b1 has a
+2,048-token context and its summaries were not useful, so it is only asked for short titles. Every LLM
+answer is checked; a failed check falls back to a generic title.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 
 MIN_WORDS = 150      # shorter sections are merged into the previous chapter
 MAX_WORDS = 2500     # longer sections are split into parts
-CHUNK_TOKENS = 1200  # input budget per LLM call (context is 2,048 incl. prompt and answer)
+TITLE_TOKENS = 600   # input budget for a title request (context is 2,048 incl. prompt and answer)
 
 SKIP_TITLES = re.compile(
     r"^(?:[\dIVX]+(?:\.\d+)*\.?\s*)?(?:acknowledge?ments?|funding|author contributions?|competing interests?|"
@@ -36,9 +36,9 @@ class ChapterPlan:
     kind: str                                  # overview | chapter
     title: str
     paragraphs: list[Paragraph] = field(default_factory=list)
-    intro: str | None = None
+    intro: str | None = None                   # overview only: the abstract, read as the overview track
     start_page: int | None = None
-    intro_source: str = "none"                 # llm | extractive | none
+    intro_source: str = "none"                 # abstract | extractive | none
 
     @property
     def text(self) -> str:
@@ -95,11 +95,12 @@ def _main_text(sections):
 
 
 def plan(doc: Document) -> list[ChapterPlan]:
-    """Chapter structure without any LLM call. Index 0 is the overview."""
-    plans = [ChapterPlan(kind="overview", title="Overview", start_page=None if doc.source == "trafilatura" else 1)]
+    """Chapter structure without any LLM call. Index 0 is the overview, which reads the abstract."""
+    overview = ChapterPlan(kind="overview", title="Overview", start_page=None if doc.source == "trafilatura" else 1)
     if doc.abstract:
-        plans.append(ChapterPlan(kind="chapter", title="Abstract", paragraphs=list(doc.abstract),
-                                 start_page=doc.abstract[0].page))
+        overview.intro = " ".join(p.text for p in doc.abstract)
+        overview.intro_source = "abstract"
+    plans = [overview]
     for section in _main_text(doc.sections):
         if section.title and SKIP_TITLES.match(section.title):
             continue
@@ -107,7 +108,6 @@ def plan(doc: Document) -> list[ChapterPlan]:
         prev = plans[-1] if len(plans) > 1 else None
         merge = (
             prev is not None
-            and prev.title != "Abstract"
             and (section.word_count < MIN_WORDS or (section.level > 1 and prev.word_count < MIN_WORDS))
             and prev.word_count + section.word_count <= MAX_WORDS
         )
@@ -118,12 +118,16 @@ def plan(doc: Document) -> list[ChapterPlan]:
             continue
         plans.extend(_split_long(title, section.paragraphs))
 
-    # A first "chapter" that is still tiny (e.g. a one-line untitled preamble) joins the next one.
-    if len(plans) > 2 and plans[1].title != "Abstract" and plans[1].word_count < 40:
+    # A first chapter that is still tiny (e.g. a one-line untitled preamble) joins the next one.
+    if len(plans) > 2 and plans[1].word_count < 40:
         small = plans.pop(1)
         plans[1].paragraphs = small.paragraphs + plans[1].paragraphs
     for p in plans[1:]:
         p.start_page = next((x.page for x in p.paragraphs if x.page is not None), None)
+    if not overview.intro and len(plans) > 1:
+        # no abstract (articles often have none): the overview opens with the start of the text
+        overview.intro = _extractive(plans[1].text, 4) or None
+        overview.intro_source = "extractive" if overview.intro else "none"
     return plans
 
 
@@ -232,69 +236,22 @@ class Enricher:
         self.failures += 1
         return None
 
-    def _chunks(self, text: str) -> list[str]:
-        """Split text at sentence boundaries into pieces of at most CHUNK_TOKENS tokens."""
-        assert self.llm is not None
-        if self.llm.count(text) <= CHUNK_TOKENS:
-            return [text]
-        chunks, current = [], ""
-        for s in sentences.split(text):
-            candidate = f"{current} {s}".strip()
-            if current and self.llm.count(candidate) > CHUNK_TOKENS:
-                chunks.append(current)
-                current = s
-            else:
-                current = candidate
-        if current:
-            chunks.append(self.llm.truncate(current, CHUNK_TOKENS))
-        return chunks
-
-    def summarize(self, text: str, n_sentences: int = 2) -> str | None:
-        if self.llm is None:
-            return None
-        try:
-            chunks = self._chunks(text)
-        except LlmError:
-            return None
-        if len(chunks) > 1:  # map: summarize each part, then reduce the summaries
-            partial = [self._ask(_summary_prompt(c, 2), 120, 6, 70) for c in chunks]
-            text = " ".join(p for p in partial if p) or _extractive(text, 6)
-        return self._ask(_summary_prompt(text, n_sentences), 140, 8, 25 * n_sentences + 10)
-
     def title(self, text: str) -> str | None:
         if self.llm is None:
             return None
         try:
-            excerpt = self.llm.truncate(text, 600)
+            excerpt = self.llm.truncate(text, TITLE_TOKENS)
         except LlmError:
             return None
         answer = self._ask(f"{excerpt}\n\nWhat is a good short title for the text above?", 24, 1, 10)
         return answer.rstrip(".") if answer else None
 
-    def run(self, doc: Document, plans: list[ChapterPlan], intros: bool = True) -> None:
-        chapters = plans[1:]
-        total = len(chapters) + 1
-        for i, ch in enumerate(chapters, start=1):
+    def run(self, plans: list[ChapterPlan]) -> None:
+        """Give untitled chapters a title. The overview is the abstract and needs no LLM."""
+        total = len(plans)
+        for i, ch in enumerate(plans[1:], start=1):
             if not self.progress(i - 1, total):
                 return
             if not ch.title:
                 ch.title = self.title(ch.text) or f"Part {i}"
-            if intros and ch.title != "Abstract" and ch.word_count >= MIN_WORDS:
-                if summary := self.summarize(ch.text, 2):
-                    ch.intro, ch.intro_source = summary, "llm"
-        self.progress(len(chapters), total)
-
-        overview = plans[0]
-        source = " ".join(p.text for p in doc.abstract) or " ".join(
-            c.intro or _extractive(c.text, 2) for c in chapters
-        )
-        if summary := self.summarize(source, 4):
-            overview.intro, overview.intro_source = summary, "llm"
-        else:
-            overview.intro = _extractive(source, 4)
-            overview.intro_source = "extractive" if overview.intro else "none"
         self.progress(total, total)
-
-
-def _summary_prompt(text: str, n: int) -> str:
-    return f"{text}\n\nSummarize the text above in {n} sentences:"

@@ -11,7 +11,6 @@ DEFAULTS: dict[str, Any] = {
     "voice": "af_heart",         # Kokoro voice id; Piper uses its single installed voice
     "speech_speed": 1.0,         # synthesis speed (playback speed is set in the player)
     "citations": "remove",       # remove | speak  — "(Smith et al., 2020)"
-    "chapter_intros": True,      # read the LLM summary at the start of each chapter
 }
 
 CHOICES: dict[str, tuple] = {

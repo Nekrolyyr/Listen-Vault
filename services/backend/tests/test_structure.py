@@ -33,10 +33,12 @@ def test_parse_tei():
 def test_chapter_plan_from_tei():
     doc = grobid.parse_tei((FIXTURES / "sample.tei.xml").read_bytes())
     plans = chapters.plan(doc)
-    assert [p.kind for p in plans] == ["overview", "chapter", "chapter"]
-    assert plans[1].title == "Abstract"
+    assert [p.kind for p in plans] == ["overview", "chapter"]  # the abstract is the overview, not a chapter
+    assert plans[0].intro == ("We study how attention heads specialise during pre-training. "
+                              "A small subset of heads accounts for most downstream gains.")
+    assert plans[0].intro_source == "abstract"
     # tiny sections are merged into one chapter; acknowledgements are skipped
-    body = plans[2]
+    body = plans[1]
     assert body.title == "Introduction"
     assert [p.text for p in body.paragraphs if p.kind == "heading"] == ["Methods: Data", "Results"]
     assert "We thank the reviewers." not in body.text
@@ -100,29 +102,26 @@ class FakeLlm:
         return "The section explains how attention heads are pruned. It reports the effect on accuracy."
 
 
-def test_enricher_map_reduce_and_titles():
-    doc = Document(abstract=[Paragraph("We prune attention heads and measure accuracy.")], sections=[
+def test_enricher_only_names_untitled_chapters():
+    abstract = "We prune attention heads and measure accuracy."
+    doc = Document(abstract=[Paragraph(abstract)], sections=[
         Section(title=None, paragraphs=[Paragraph("This is a sentence about heads. " * 400)]),
     ])
     plans = chapters.plan(doc)
     llm = FakeLlm()
-    chapters.Enricher(llm).run(doc, plans)
-    body = plans[-1]
-    assert body.title == "Attention Pruning"
-    assert body.intro.startswith("The section explains")
-    # 2400 words > 1200-token budget: two map calls, one reduce call, plus title and overview
-    assert sum("in 2 sentences" in p for p in llm.prompts) == 3
-    assert plans[0].intro_source == "llm"
+    chapters.Enricher(llm).run(plans)
+    assert plans[-1].title == "Attention Pruning"
+    assert plans[-1].intro is None                   # no chapter summaries any more
+    assert plans[0].intro == abstract                # the overview reads the abstract
+    assert len(llm.prompts) == 1 and "title" in llm.prompts[0]
 
 
-def test_enricher_falls_back_to_extractive():
-    doc = Document(abstract=[Paragraph("First point. Second point. Third point. Fourth point. Fifth.")],
-                   sections=[Section(title="Intro", paragraphs=[Paragraph("Words here. " * 100)])])
+def test_overview_without_abstract_opens_with_text():
+    doc = Document(abstract=[], sections=[Section(title="Intro", paragraphs=[Paragraph("Words here. " * 100)])])
     plans = chapters.plan(doc)
-    chapters.Enricher(FakeLlm(answers=[])).run(doc, plans)
-    assert plans[0].intro == "First point. Second point. Third point. Fourth point."
-    assert plans[0].intro_source == "extractive"
-    assert plans[1].intro is None
+    assert plans[0].intro_source == "extractive" and plans[0].intro.startswith("Words here.")
+    chapters.Enricher(FakeLlm(answers=[])).run(plans)
+    assert plans[1].title == "Intro" and plans[1].intro is None
 
 
 def test_pdf_fallback(tmp_path):

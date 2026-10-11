@@ -77,7 +77,6 @@ export interface Settings {
     voice: string;
     speech_speed: number;
     citations: "remove" | "speak";
-    chapter_intros: boolean;
   };
   voices: string[];
   engines: string[];

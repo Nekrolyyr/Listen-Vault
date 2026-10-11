@@ -3,7 +3,7 @@
   source.pdf | source.html   what was uploaded or fetched
   viewer.pdf                 PDF shown in the reader (OCR'd copy for scans)
   structure.json             normalized document model
-  chapters.json              chapter plan with LLM intros and overview
+  chapters.json              chapter plan (overview = abstract, LLM-written chapter titles)
   audio/<idx>.m4a            one audio file per chapter (idx 0 = overview)
 """
 from __future__ import annotations
