@@ -54,6 +54,7 @@ export function libraryView(): View {
   let groups: Groups | null = null;
   let graph: Graph | null = null;
   let filters: Filters = { ...NO_FILTERS };
+  let filtersOpen = false; // phone disclosure state, kept across re-renders
   let query = "";
   let sort = localStore("sort") ?? "added";
   const saved = localStore("view");
@@ -320,8 +321,8 @@ export function libraryView(): View {
       "div",
       { class: "dash", "aria-label": "Library at a glance" },
       tile("Papers and articles", String(f.total), () => setFilters({ ...NO_FILTERS })),
-      tile("Papers", String(f.source.pdf), () => setFilters({ ...NO_FILTERS, source: "pdf" })),
-      tile("Articles", String(f.source.url), () => setFilters({ ...NO_FILTERS, source: "url" })),
+      tile("Papers", String(f.source.pdf ?? 0), () => setFilters({ ...NO_FILTERS, source: "pdf" })),
+      tile("Articles", String(f.source.url ?? 0), () => setFilters({ ...NO_FILTERS, source: "url" })),
       tile("Listened", String(f.listened.true ?? 0), () => setFilters({ ...NO_FILTERS, listened: true })),
       tile("Listened audio", hours(f.listened_audio_s)),
       tile("Audio in library", hours(f.audio_s)),
@@ -373,7 +374,7 @@ export function libraryView(): View {
 
   function render(): void {
     dashSlot.replaceChildren(dashboard());
-    facetSlot.replaceChildren(facetColumn(facets, filters, setFilters));
+    facetSlot.replaceChildren(facetColumn(facets, filters, setFilters, filtersOpen, (o) => (filtersOpen = o)));
     headSlot.replaceChildren(resultsHead());
     const body = { groups: renderGroups, graph: renderGraph, timeline: () => timeline, list: renderList }[mode];
     bodySlot.replaceChildren(body());

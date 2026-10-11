@@ -367,13 +367,16 @@ export function readerView(id: string): View {
   const CHAPTERS_MIN = 90;
 
   function setSideWidth(px: number, save = true): void {
-    const width = Math.round(Math.min(Math.max(px, SIDE_MIN), Math.max(SIDE_MIN, body.clientWidth - DOC_MIN)));
+    // not laid out yet (set at creation, before insertion): no room limit to apply
+    const room = body.clientWidth ? body.clientWidth - DOC_MIN : Infinity;
+    const width = Math.round(Math.min(Math.max(px, SIDE_MIN), Math.max(SIDE_MIN, room)));
     body.style.setProperty("--side-w", `${width}px`);
     if (save) storeNumber(SIDE_KEY, width);
   }
 
   function setQaHeight(px: number, save = true): void {
-    const height = Math.round(Math.min(Math.max(px, QA_MIN), Math.max(QA_MIN, sidePane.clientHeight - CHAPTERS_MIN)));
+    const room = sidePane.clientHeight ? sidePane.clientHeight - CHAPTERS_MIN : Infinity;
+    const height = Math.round(Math.min(Math.max(px, QA_MIN), Math.max(QA_MIN, room)));
     sidePane.style.setProperty("--qa-h", `${height}px`);
     if (save) storeNumber(QA_KEY, height);
   }
@@ -431,6 +434,12 @@ export function readerView(id: string): View {
   };
   window.addEventListener("resize", onWindowResize);
 
+  // Background timers are throttled: catch up on chapter readiness as soon as the page is shown again.
+  const onVisible = () => {
+    if (document.visibilityState === "visible" && doc && doc.status !== "ready" && doc.status !== "failed") refresh();
+  };
+  document.addEventListener("visibilitychange", onVisible);
+
   const el = h("section", { class: "reader" }, head, keywordBar, tabs, body, bar);
   refresh(true);
   return {
@@ -442,6 +451,7 @@ export function readerView(id: string): View {
       window.clearTimeout(poll);
       window.clearTimeout(qaTimer);
       document.removeEventListener("keydown", onKey);
+      document.removeEventListener("visibilitychange", onVisible);
       player?.destroy();
       pdf?.destroy();
     },

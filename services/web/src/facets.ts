@@ -98,14 +98,25 @@ function termFacet(title: string, values: { term: string; count: number }[], f: 
   return h("fieldset", { class: "facet" }, h("legend", {}, title), search, list, more);
 }
 
+/** The filter column. On phones it is a disclosure, closed unless `open`; on wide screens it is always open. */
 export function facetColumn(
   facets: Facets | null,
   f: Filters,
   onChange: (next: Filters) => void,
+  open: boolean,
+  onToggle: (open: boolean) => void,
 ): HTMLElement {
   const set = (patch: Partial<Filters>) => onChange({ ...f, ...patch });
   const active = f.term.length > 0 || f.year !== null || f.source !== null || f.listened !== null || f.status !== null;
+  const activeCount = f.term.length + [f.year, f.source, f.listened, f.status].filter((v) => v !== null).length;
+  const wide = window.matchMedia("(min-width: 861px)").matches;
   const children: (HTMLElement | null)[] = [
+    h(
+      "summary",
+      {},
+      "Filters",
+      activeCount ? h("span", { class: "chip ok" }, `${activeCount} active`) : null,
+    ),
     h(
       "div",
       { class: "facets-head" },
@@ -113,9 +124,15 @@ export function facetColumn(
       active ? h("button", { type: "button", class: "facet-clear", onclick: () => onChange(NO_FILTERS) }, "Clear all") : null,
     ),
   ];
+  const root = (...rest: (HTMLElement | null)[]) =>
+    h(
+      "details",
+      { class: "facets", open: wide || open, "aria-label": "Filter the library", ontoggle: (e: Event) => onToggle((e.target as HTMLDetailsElement).open) },
+      ...children,
+      ...rest,
+    );
   if (!facets) {
-    children.push(h("p", { class: "pane-message" }, "Loading…"));
-    return h("aside", { class: "facets", "aria-label": "Filter the library" }, ...children);
+    return root(h("p", { class: "pane-message" }, "Loading…"));
   }
   const s = facets.source;
   children.push(
@@ -156,5 +173,5 @@ export function facetColumn(
         set({ term: f.term.includes(term) ? f.term.filter((t) => t !== term) : [...f.term, term] })));
     }
   }
-  return h("aside", { class: "facets", "aria-label": "Filter the library" }, ...children);
+  return root();
 }

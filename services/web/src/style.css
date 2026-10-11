@@ -214,7 +214,11 @@ a.doc-title:hover { text-decoration: underline; }
 .reader-title { flex: 1; min-width: 0; }
 .reader-title h1 { margin: 0; font-size: 17px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .reader-title p { margin: 2px 0 0; color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pane-tabs { display: none; }
+/* the reader's Document/Chapters switch (phones only) and the library's view switch share this class */
+.pane-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.pane-tabs button { flex: 1; padding: 7px 12px; border: 0; border-radius: 8px; background: none; cursor: pointer; color: var(--muted); }
+.pane-tabs button[aria-selected="true"] { background: var(--surface-2); color: var(--text); font-weight: 600; }
+.reader .pane-tabs { display: none; }
 .reader-body { display: grid; grid-template-columns: minmax(0, 1fr) 6px var(--side-w, 380px); min-height: 0; }
 .splitter { position: relative; touch-action: none; z-index: 2; outline: none; }
 .splitter::after { content: ""; position: absolute; background: var(--border); transition: background .15s; }
@@ -294,16 +298,30 @@ body.is-dragging, body.is-dragging * { cursor: inherit; user-select: none; }
 
 /* ---------------------------------------------------------------- small screens */
 @media (max-width: 900px) {
-  .reader-body { grid-template-columns: 1fr; }
+  /* A flex column, not the desktop grid: hidden children (no keywords, a hidden tab) must not shift the rows. */
+  .reader { display: flex; flex-direction: column; }
+  .reader > * { flex: none; }
+  .reader > .reader-body { flex: 1 1 0; min-height: 0; grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(0, 1fr); }
   .splitter { display: none; }
-  .qa { flex: 0 0 auto; }
-  .pane-tabs { display: flex; gap: 4px; padding: 6px 16px; border-bottom: 1px solid var(--border); }
-  .pane-tabs button { flex: 1; padding: 7px; border: 0; border-radius: 8px; background: none; cursor: pointer; color: var(--muted); }
-  .pane-tabs button[aria-selected="true"] { background: var(--surface-2); color: var(--text); font-weight: 600; }
+  .reader .pane-tabs { display: flex; padding: 6px 16px; border-bottom: 1px solid var(--border); }
+  .reader .pane-tabs button { padding: 7px; }
   .reader-body.tab-doc .side-pane { display: none; }
   .reader-body.tab-chapters .doc-pane { display: none; }
-  .side-pane { border-left: 0; }
-  .player-bar { grid-template-columns: 1fr auto; grid-template-areas: "info extra" "seek seek" "controls controls"; gap: 4px 12px; padding-top: 8px; }
+  .side-pane { border-left: 0; min-height: 0; }
+  /* the question box keeps the Ask button in view; the chapter list takes the rest and scrolls */
+  .now-reading { min-height: 0; padding: 10px 16px; }
+  .now-reading p { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 15px; line-height: 1.4; }
+  .qa { flex: 0 1 auto; max-height: 42%; }
+  .chapter-list { min-height: 0; }
+  .keyword-bar { flex-wrap: nowrap; overflow-x: auto; padding: 6px 16px; scrollbar-width: none; }
+  .keyword-bar::-webkit-scrollbar { display: none; }
+  .keyword-bar .chip { flex: none; white-space: nowrap; }
+  .player-bar { grid-template-columns: 1fr auto; grid-template-areas: "info extra" "seek seek" "controls controls"; gap: 0 10px; padding: 4px 12px calc(4px + env(safe-area-inset-bottom)); }
+  .bar-title { font-size: 13px; }
+  .bar-extra select { padding: 3px 6px; font-size: 13px; }
+  .play { width: 42px; height: 42px; margin: 0 2px; }
+  .bar-controls .icon-btn { min-width: 36px; height: 36px; }
+  .bar-seek { margin: 2px 0; }
   .bar-info { grid-area: info; }
   .bar-extra { grid-area: extra; }
   .bar-seek { grid-area: seek; }
@@ -365,10 +383,24 @@ button.tile:hover { border-color: var(--accent); }
 .abstract-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--surface); border-top: 1px solid var(--border); box-shadow: var(--shadow); }
 .abstract-bar[hidden] { display: none; }
 .abstract-bar .bar-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.facets > summary { display: none; }
 @media (max-width: 860px) {
-  .library-body { grid-template-columns: 1fr; }
-  .facets { position: static; max-height: none; }
-  .dash .tile { flex-basis: 45%; }
+  .library-body { grid-template-columns: 1fr; gap: 12px; }
+  .facets { position: static; max-height: none; padding-right: 0; }
+  .facets > summary {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px; list-style: none; cursor: pointer;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); font-weight: 600;
+  }
+  .facets > summary::-webkit-details-marker { display: none; }
+  .facets > summary::after { content: "▾"; margin-left: auto; color: var(--muted); transition: transform .15s; }
+  .facets[open] > summary::after { transform: rotate(180deg); }
+  .facets[open] { padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+  .facets-head { justify-content: flex-end; }
+  .facets-head strong { display: none; }
+  .dash { gap: 8px; margin-bottom: 14px; }
+  .dash .tile { flex-basis: 45%; padding: 8px 12px; }
+  .dash .tile-value { font-size: 17px; }
+  .years { height: 60px; }
 }
 
 /* ---- similarity graph ---- */
