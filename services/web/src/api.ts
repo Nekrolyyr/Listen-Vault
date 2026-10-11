@@ -69,6 +69,23 @@ export interface TextChapter {
   paragraphs: { text: string; kind: string }[];
 }
 
+export interface Citation {
+  n: number;
+  page: number | null;
+  title: string;
+  text: string;
+}
+
+export interface Question {
+  id: number;
+  question: string;
+  answer: string | null;
+  citations: Citation[];
+  status: "queued" | "done" | "failed";
+  error: string | null;
+  created_at: string;
+}
+
 export interface Playback {
   chapter_idx: number;
   position_s: number;
@@ -148,6 +165,8 @@ export const api = {
     request<{ ok: boolean }>("PUT", `/api/documents/${id}/playback`, p, keepalive),
   backfillKeywords: () => request<{ queued: number }>("POST", "/api/library/keywords/backfill"),
   queue: (id: string) => request<Doc>("POST", `/api/documents/${id}/queue`),
+  questions: (id: string) => request<Question[]>("GET", `/api/documents/${id}/questions`),
+  ask: (id: string, question: string) => request<Question>("POST", `/api/documents/${id}/questions`, { question }),
   zotero: () => request<ZoteroStatus>("GET", "/api/zotero"),
   zoteroSync: () => request<{ queued: boolean }>("POST", "/api/zotero/sync"),
   settings: () => request<Settings>("GET", "/api/settings"),

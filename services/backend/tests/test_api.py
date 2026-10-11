@@ -120,6 +120,23 @@ def test_zotero_status_and_queue_of_catalogued_items(client, settings):
     assert client.get("/api/zotero", headers=AUTH).json()["catalogued"] == 1
 
 
+def test_questions_need_a_processed_paper(client, settings):
+    doc_id = client.post("/api/documents/url", json={"url": "https://example.org/a"}, headers=AUTH).json()["id"]
+    body = {"question": "What is the main result?"}
+    assert client.post(f"/api/documents/{doc_id}/questions", json=body, headers=AUTH).status_code == 409
+    with psycopg.connect(settings.database_url, autocommit=True) as conn:
+        conn.execute("UPDATE documents SET status = 'ready' WHERE id = %s", (doc_id,))
+        conn.execute("UPDATE jobs SET state = 'done'")
+    r = client.post(f"/api/documents/{doc_id}/questions", json=body, headers=AUTH)
+    assert r.status_code == 202 and r.json()["status"] == "queued"
+    listed = client.get(f"/api/documents/{doc_id}/questions", headers=AUTH).json()
+    assert [q["question"] for q in listed] == ["What is the main result?"]
+    with psycopg.connect(settings.database_url, autocommit=True) as conn:
+        assert conn.execute("SELECT kind FROM jobs WHERE state = 'queued'").fetchone()[0] == "qa"
+        assert conn.execute("SELECT status FROM documents").fetchone()[0] == "ready"  # untouched by a question
+    assert client.post(f"/api/documents/{doc_id}/questions", json={"question": "no"}, headers=AUTH).status_code == 422
+
+
 def test_playback_and_settings(client):
     doc_id = client.post("/api/documents/url", json={"url": "https://example.org/a"}, headers=AUTH).json()["id"]
     assert client.get(f"/api/documents/{doc_id}/playback", headers=AUTH).json()["position_s"] == 0

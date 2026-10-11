@@ -9,6 +9,7 @@ from uuid import UUID
 
 from .. import config, db, jobs, zotero
 from ..storage import DocPaths
+from . import qa
 from .fetch import FetchError
 from .grobid import GrobidError
 from .llm import LlmClient
@@ -63,7 +64,7 @@ class Worker:
             self._fail(job, f"Internal error: {e}", retryable=True)
             return True
         with self.pool.connection() as conn:
-            jobs.finish(conn, job["id"], job["document_id"])
+            jobs.finish(conn, job["id"], jobs.document_of(job))
         log.info("job %s done in %.0fs", job["id"], time.monotonic() - t0)
         return True
 
@@ -73,6 +74,9 @@ class Worker:
                 zotero.sync(self.pool, self.settings)
             except zotero.ZoteroError as e:  # recorded in zotero_state.last_error; the next sync tries again
                 log.warning("zotero sync failed: %s", e)
+            return
+        if job["kind"] == "qa":
+            qa.run(self.pool, self.settings, self.pipeline.llm, job)
             return
         raise PipelineError(f"Unknown job kind {job['kind']!r}")
 

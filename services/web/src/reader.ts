@@ -1,4 +1,4 @@
-import { api, type DocDetail, type Sentence, type TextChapter } from "./api";
+import { api, type DocDetail, type Question, type Sentence, type TextChapter } from "./api";
 import { authors, clock, duration, h, icon, toast } from "./dom";
 import type { View } from "./main";
 import { PdfView } from "./pdfview";
@@ -21,7 +21,35 @@ export function readerView(id: string): View {
   const docPane = h("div", { class: "doc-pane" }, h("p", { class: "pane-message" }, "Loading…"));
   const nowReading = h("div", { class: "now-reading", "aria-live": "off" });
   const chapterList = h("ol", { class: "chapter-list" });
-  const sidePane = h("aside", { class: "side-pane", "aria-label": "Chapters" }, nowReading, chapterList);
+
+  // ---------------------------------------------------------------- questions about the paper
+  let questions: Question[] = [];
+  let qaTimer = 0;
+  const qaList = h("ol", { class: "qa-list", "aria-live": "polite" });
+  const qaText = h("textarea", { rows: 2, maxlength: 500, placeholder: "Ask about this paper…", "aria-label": "Your question" }) as HTMLTextAreaElement;
+  const qaSubmit = h("button", { type: "submit", class: "btn small primary" }, "Ask");
+  const qaForm = h(
+    "form",
+    {
+      class: "qa-form",
+      onsubmit: async (e: Event) => {
+        e.preventDefault();
+        const question = qaText.value.trim();
+        if (!question) return;
+        try {
+          await api.ask(id, question);
+          qaText.value = "";
+          loadQuestions();
+        } catch (err) {
+          toast((err as Error).message, "error");
+        }
+      },
+    },
+    qaText,
+    qaSubmit,
+  );
+  const qaBox = h("section", { class: "qa" }, h("h2", {}, "Ask about this paper"), qaForm, qaList);
+  const sidePane = h("aside", { class: "side-pane", "aria-label": "Chapters" }, nowReading, chapterList, qaBox);
   const tabs = h(
     "div",
     { class: "pane-tabs", role: "tablist" },
@@ -118,6 +146,8 @@ export function readerView(id: string): View {
       ),
       ...(doc.source_url ? [h("a", { href: doc.source_url, target: "_blank", rel: "noopener noreferrer", class: "btn small" }, "Source")] : []),
     );
+    qaSubmit.disabled = doc.status !== "ready";
+    qaText.disabled = doc.status !== "ready";
     const terms = [...doc.keywords.task, ...doc.keywords.method, ...doc.keywords.topic, ...doc.keywords.keyword];
     keywordBar.replaceChildren(...terms.slice(0, 14).map((t) => h("span", { class: "chip" }, t)));
     keywordBar.hidden = terms.length === 0;
@@ -181,6 +211,51 @@ export function readerView(id: string): View {
     docPane.replaceChildren(article);
   }
 
+  async function loadQuestions(): Promise<void> {
+    window.clearTimeout(qaTimer);
+    try {
+      questions = await api.questions(id);
+    } catch (e) {
+      toast((e as Error).message, "error");
+      return;
+    }
+    renderQuestions();
+    if (!destroyed && questions.some((q) => q.status === "queued")) qaTimer = window.setTimeout(loadQuestions, 2500);
+  }
+
+  function renderQuestions(): void {
+    if (!questions.length) {
+      qaList.replaceChildren(h("li", { class: "quiet" }, doc?.status === "ready" ? "Ask anything the paper covers. Answers quote the passages they come from." : "Questions can be asked once the paper has been processed."));
+      return;
+    }
+    qaList.replaceChildren(
+      ...questions.map((q) => {
+        const answer =
+          q.status === "queued"
+            ? h("p", { class: "quiet" }, "Reading the paper… this takes about 30 seconds.")
+            : q.status === "failed"
+              ? h("p", { class: "quiet" }, q.error ?? "No answer.")
+              : h("p", { class: "a" }, q.answer ?? "");
+        const cites = q.status === "done"
+          ? h(
+              "div",
+              { class: "cites" },
+              ...q.citations.filter((c) => c.page).map((c) =>
+                h("button", {
+                  type: "button",
+                  class: "cite",
+                  title: c.text,
+                  onclick: () => pdf?.showPage(c.page!),
+                  disabled: !pdf,
+                }, `p. ${c.page}`),
+              ),
+            )
+          : null;
+        return h("li", {}, h("p", { class: "q" }, q.question), answer, cites);
+      }),
+    );
+  }
+
   function renderState(): void {
     if (!player) return;
     const a = player.audio;
@@ -200,7 +275,10 @@ export function readerView(id: string): View {
       const fresh = await api.document(id);
       const hadChapters = doc?.chapters.map((c) => `${c.idx}${c.ready}`).join() ?? "";
       doc = fresh;
-      if (first) await setup();
+      if (first) {
+        await setup();
+        loadQuestions();
+      }
       else player?.update(fresh);
       renderHead();
       if (hadChapters !== fresh.chapters.map((c) => `${c.idx}${c.ready}`).join()) {
@@ -283,6 +361,7 @@ export function readerView(id: string): View {
     destroy: () => {
       destroyed = true;
       window.clearTimeout(poll);
+      window.clearTimeout(qaTimer);
       document.removeEventListener("keydown", onKey);
       player?.destroy();
       pdf?.destroy();

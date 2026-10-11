@@ -69,6 +69,15 @@ class RerunIn(BaseModel):
     stage: str = "synthesis"
 
 
+class QuestionIn(BaseModel):
+    question: str = Field(min_length=3, max_length=500)
+
+
+def _question_out(r: dict[str, Any]) -> dict[str, Any]:
+    return {"id": r["id"], "question": r["question"], "answer": r["answer"], "citations": r["citations"],
+            "status": r["status"], "error": r["error"], "created_at": r["created_at"]}
+
+
 def _doc_out(r: dict[str, Any]) -> dict[str, Any]:
     out = {
         "id": str(r["id"]), "title": r["title"] or r.get("original_filename") or r.get("source_url") or "Untitled",
@@ -213,6 +222,26 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
                 "SELECT kind, term FROM document_keywords WHERE document_id = %s ORDER BY weight DESC, term",
                 (doc_id,)).fetchall())
         return out
+
+    @app.get("/api/documents/{doc_id}/questions")
+    def list_questions(request: Request, doc_id: UUID):
+        with pool(request).connection() as conn:
+            get_doc(conn, doc_id)
+            rows = conn.execute(
+                "SELECT * FROM questions WHERE document_id = %s ORDER BY id DESC LIMIT 50", (doc_id,)).fetchall()
+        return [_question_out(r) for r in rows]
+
+    @app.post("/api/documents/{doc_id}/questions", status_code=202)
+    def ask_question(request: Request, doc_id: UUID, body: QuestionIn):
+        with pool(request).connection() as conn, conn.transaction():
+            row = get_doc(conn, doc_id)
+            if row["status"] != "ready":
+                raise HTTPException(409, "Ask once the paper has been processed")
+            question = conn.execute(
+                "INSERT INTO questions (document_id, question) VALUES (%s, %s) RETURNING *",
+                (doc_id, body.question.strip())).fetchone()
+            jobs.enqueue_question(conn, doc_id, question["id"])
+        return _question_out(question)
 
     @app.post("/api/documents/{doc_id}/queue", status_code=202)
     def queue_document(request: Request, doc_id: UUID):

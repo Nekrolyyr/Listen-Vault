@@ -43,9 +43,19 @@ def enqueue_library(conn: Connection, kind: str, options: dict[str, Any] | None 
     return row["id"] if row else None
 
 
-def has_open_job(conn: Connection, document_id: UUID | str) -> bool:
+def enqueue_question(conn: Connection, document_id: UUID | str, question_id: int) -> int:
+    """Queue a 'qa' job. It does not change the document's processing status."""
     row = conn.execute(
-        "SELECT 1 FROM jobs WHERE document_id = %s AND state IN ('queued', 'running') LIMIT 1",
+        "INSERT INTO jobs (document_id, kind, options) VALUES (%s, 'qa', %s) RETURNING id",
+        (document_id, json.dumps({"question_id": question_id})),
+    ).fetchone()
+    return row["id"]
+
+
+def has_open_job(conn: Connection, document_id: UUID | str) -> bool:
+    """True while a document-processing job is queued or running (questions do not count)."""
+    row = conn.execute(
+        "SELECT 1 FROM jobs WHERE document_id = %s AND kind = 'document' AND state IN ('queued', 'running') LIMIT 1",
         (document_id,),
     ).fetchone()
     return row is not None
@@ -95,6 +105,11 @@ def heartbeat(conn: Connection, job_id: int, stage: str | None = None,
     return cur.rowcount == 1
 
 
+def document_of(job: dict[str, Any]) -> UUID | str | None:
+    """The document whose processing status a job changes: only document jobs do."""
+    return job["document_id"] if job["kind"] == "document" else None
+
+
 def finish(conn: Connection, job_id: int, document_id: UUID | str | None) -> None:
     with conn.transaction():
         conn.execute(
@@ -112,7 +127,7 @@ def fail(conn: Connection, job: dict[str, Any], error: str, retryable: bool) -> 
     """Mark a job failed, or re-queue it with backoff. Returns True when it will be retried."""
     attempts = job["attempts"]
     retry = retryable and attempts < MAX_ATTEMPTS
-    document_id = job["document_id"]
+    document_id = document_of(job)
     with conn.transaction():
         if retry:
             delay = RETRY_DELAYS_S[min(attempts, len(RETRY_DELAYS_S)) - 1]
