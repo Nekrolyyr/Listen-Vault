@@ -294,8 +294,7 @@ Each phase has its own commit. Migrations are applied in file order at start-up 
 - Keyword extraction and figure summaries add LLM time per paper (roughly 1–4 minutes); they run before chapter naming.
 - Topic clustering and the groups are quadratic in the number of terms or papers. Topics use the 300 most common
   keywords; a large library (thousands of papers) would need caching.
-- Papers processed before this round keep their old overview and need "Process from scratch" for the overview and PDF sentence positions;
-  "Process from scratch".
+- Papers processed before this round keep their old overview and need "Process from scratch" to get the abstract overview and PDF sentence positions.
 - A Zotero item deleted in Listen is re-catalogued the next time it changes in Zotero.
 
 ## Sources
