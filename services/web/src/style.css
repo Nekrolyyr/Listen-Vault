@@ -142,7 +142,7 @@ progress:not([value]) { background: linear-gradient(90deg, var(--surface-2) 30%,
 .reader ~ #toast, body:has(.player-bar) #toast { bottom: 110px; }
 
 /* ---------------------------------------------------------------- library */
-.library { max-width: 920px; margin: 0 auto; }
+.library { max-width: 1240px; margin: 0 auto; }
 .add-panel { display: grid; gap: 12px; margin-bottom: 24px; }
 .dropzone {
   display: flex; align-items: center; justify-content: center; gap: 12px;
@@ -307,4 +307,49 @@ a.doc-title:hover { text-decoration: underline; }
   .url-form .btn { width: 100%; }
   .toolbar { flex-direction: column; }
   .article-text { padding: 20px 16px 48px; font-size: 17px; }
+}
+
+/* ---- library overview: dashboard, filters, groups, abstract player ---- */
+.dash { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; margin-bottom: 20px; }
+.tile { flex: 1 1 130px; display: grid; gap: 2px; padding: 10px 14px; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); }
+button.tile:hover { border-color: var(--accent); }
+.tile-value { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.tile-label { font-size: 12px; color: var(--muted); }
+.years { flex: 2 1 260px; min-width: 200px; display: flex; align-items: flex-end; gap: 3px; height: 74px; padding: 8px 10px 18px; position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.year-bar { flex: 1; min-width: 6px; border: 0; border-radius: 3px 3px 0 0; background: var(--accent-soft); cursor: pointer; }
+.year-bar:hover, .year-bar.on { background: var(--accent); }
+.years-range { position: absolute; left: 10px; bottom: 3px; font-size: 11px; color: var(--muted); }
+.library-body { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 24px; align-items: start; }
+.facets { display: grid; gap: 14px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; padding-right: 4px; }
+.facets-head { display: flex; align-items: center; justify-content: space-between; }
+.facet-clear, .facet-more { border: 0; background: none; color: var(--accent); font-size: 13px; padding: 2px 0; cursor: pointer; }
+.facet { border: 0; margin: 0; padding: 0; display: grid; gap: 4px; min-width: 0; }
+.facet legend { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 0; margin-bottom: 4px; }
+.facet-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; font-size: 13.5px; padding: 2px 0; cursor: pointer; }
+.facet-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.facet-count { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.facet-search { font-size: 13px; padding: 5px 8px; }
+.facet-terms { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.facet-empty { font-size: 13px; color: var(--muted); }
+.results { min-width: 0; }
+.results-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.results-head .quiet { font-size: 13px; color: var(--muted); }
+.doc-terms { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.chip.term { border: 0; cursor: pointer; }
+.chip.term:hover { background: var(--accent-soft); color: var(--accent); }
+.abstract-toggle { margin-top: 6px; font-size: 13px; }
+.abstract-toggle summary { cursor: pointer; color: var(--muted); }
+.abstract-toggle p { margin: 6px 0 0; color: var(--text); line-height: 1.5; }
+.groups { display: grid; gap: 10px; }
+.group { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; }
+.group summary { cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 14px; }
+.group-label { font-weight: 600; }
+.group-docs { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; font-size: 14px; }
+.abstract-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--surface); border-top: 1px solid var(--border); box-shadow: var(--shadow); }
+.abstract-bar[hidden] { display: none; }
+.abstract-bar .bar-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+@media (max-width: 860px) {
+  .library-body { grid-template-columns: 1fr; }
+  .facets { position: static; max-height: none; }
+  .dash .tile { flex-basis: 45%; }
 }

@@ -32,6 +32,44 @@ export interface Doc {
   chapters_total: number;
   chapters_ready: number;
   playback: { chapter_idx: number; position_s: number } | null;
+  abstract: string | null;
+  top_terms?: string[];
+}
+
+/** Library filters. Terms must all match; the other filters narrow the same way. */
+export interface Filters {
+  term: string[];
+  year: string | null;
+  source: "pdf" | "url" | "zotero" | null;
+  listened: boolean | null;
+  status: Doc["status"] | null;
+}
+
+export const NO_FILTERS: Filters = { term: [], year: null, source: null, listened: null, status: null };
+
+export interface Facets {
+  total: number;
+  audio_s: number;
+  listened_audio_s: number;
+  status: Record<string, number>;
+  listened: Record<"true" | "false", number>;
+  source: Record<"pdf" | "url" | "zotero", number>;
+  years: { year: number; count: number }[];
+  terms: Record<KeywordKind, { term: string; count: number }[]>;
+}
+
+export interface GroupDoc {
+  id: string;
+  title: string;
+  year: string | null;
+  status: Doc["status"];
+  listened: boolean;
+  source: "pdf" | "url";
+}
+
+export interface Groups {
+  groups: { label: string[]; documents: GroupDoc[] }[];
+  ungrouped: GroupDoc[];
 }
 
 export interface Chapter {
@@ -120,6 +158,17 @@ export class ApiError extends Error {
 
 const WRITE_HEADERS = { "X-Requested-With": "listen-vault" };
 
+/** Query string for the library filters (empty when nothing is set). */
+export function filterQuery(f: Filters): string {
+  const p = new URLSearchParams();
+  for (const t of f.term) p.append("term", t);
+  if (f.year) p.set("year", f.year);
+  if (f.source) p.set("source", f.source);
+  if (f.listened !== null) p.set("listened", String(f.listened));
+  if (f.status) p.set("status", f.status);
+  return p.toString();
+}
+
 export function toLogin(): never {
   window.location.href = `/auth/?rd=${encodeURIComponent(window.location.href)}`;
   throw new ApiError(401, "Signing in…");
@@ -149,8 +198,10 @@ async function request<T>(method: string, path: string, body?: unknown, keepaliv
 }
 
 export const api = {
-  documents: (q = "", sort = "added") =>
-    request<Doc[]>("GET", `/api/documents?q=${encodeURIComponent(q)}&sort=${sort}`),
+  documents: (q = "", sort = "added", f: Filters = NO_FILTERS) =>
+    request<Doc[]>("GET", `/api/documents?q=${encodeURIComponent(q)}&sort=${sort}&${filterQuery(f)}`),
+  facets: (f: Filters) => request<Facets>("GET", `/api/library/facets?${filterQuery(f)}`),
+  groups: (f: Filters) => request<Groups>("GET", `/api/library/groups?${filterQuery(f)}`),
   document: (id: string) => request<DocDetail>("GET", `/api/documents/${id}`),
   addUrl: (url: string) => request<Doc>("POST", "/api/documents/url", { url }),
   patch: (id: string, changes: { title?: string; listened?: boolean }) =>

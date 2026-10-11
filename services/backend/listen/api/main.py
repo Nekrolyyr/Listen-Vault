@@ -13,11 +13,11 @@ from typing import Any
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from fastapi import Body, FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi import Body, Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from .. import appsettings, config, db, jobs
+from .. import appsettings, config, db, jobs, library
 from ..storage import DocPaths
 from .security import AuthMiddleware
 
@@ -37,7 +37,11 @@ SELECT d.*, j.state AS job_state, j.stage AS job_stage, j.progress_done, j.progr
        (SELECT count(*) FROM chapters c WHERE c.document_id = d.id) AS chapter_count,
        (SELECT count(*) FROM chapters c WHERE c.document_id = d.id AND c.audio_file IS NOT NULL) AS ready_count,
        p.chapter_idx AS play_chapter, p.position_s AS play_position,
-       (z.document_id IS NOT NULL) AS from_zotero
+       (z.document_id IS NOT NULL) AS from_zotero,
+       (SELECT coalesce(array_agg(t.term ORDER BY t.weight DESC), '{}') FROM (
+            SELECT k.term, k.weight FROM document_keywords k
+            WHERE k.document_id = d.id AND k.kind IN ('task', 'method', 'topic')
+            ORDER BY k.weight DESC, k.term LIMIT 4) t) AS top_terms
 FROM documents d
 LEFT JOIN LATERAL (SELECT * FROM jobs WHERE document_id = d.id ORDER BY id DESC LIMIT 1) j ON true
 LEFT JOIN playback p ON p.document_id = d.id
@@ -48,6 +52,42 @@ SORTS = {
     "listened": "d.last_listened_at DESC NULLS LAST, d.created_at DESC",
     "title": "lower(d.title) ASC",
 }
+
+
+def parse_filters(
+    term: list[str] = Query(default=[], max_length=20),
+    year: str | None = Query(default=None, pattern=r"^\d{4}$"),
+    source: str | None = Query(default=None, pattern=r"^(pdf|url|zotero)$"),
+    listened: bool | None = None,
+    status: str | None = Query(default=None, pattern=r"^(catalogued|queued|processing|ready|failed)$"),
+) -> dict[str, Any]:
+    """Library filters shared by the list, the facets, the groups and the graph. Terms must all match."""
+    return {"term": [t.strip().lower() for t in term if t.strip()][:20], "year": year, "source": source,
+            "listened": listened, "status": status}
+
+
+def filter_sql(f: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """SQL condition (starting with AND, or empty) for the filters, over the alias `d` (documents)."""
+    clauses: list[str] = []
+    params: dict[str, Any] = {}
+    for i, term in enumerate(f["term"]):
+        clauses.append(f"EXISTS (SELECT 1 FROM document_keywords k WHERE k.document_id = d.id AND k.term = %(t{i})s)")
+        params[f"t{i}"] = term
+    if f["year"]:
+        clauses.append("substring(d.published from '[0-9]{4}') = %(year)s")
+        params["year"] = f["year"]
+    if f["source"] == "zotero":
+        clauses.append("EXISTS (SELECT 1 FROM zotero_links z WHERE z.document_id = d.id)")
+    elif f["source"] in ("pdf", "url"):
+        clauses.append("d.source_type = %(source)s")
+        params["source"] = f["source"]
+    if f["listened"] is not None:
+        clauses.append("d.listened = %(listened)s")
+        params["listened"] = f["listened"]
+    if f["status"]:
+        clauses.append("d.status = %(status)s")
+        params["status"] = f["status"]
+    return "".join(f" AND {c}" for c in clauses), params
 
 
 class UrlIn(BaseModel):
@@ -85,7 +125,10 @@ def _doc_out(r: dict[str, Any]) -> dict[str, Any]:
         "source_url": r["source_url"], "has_pdf": r["has_pdf"], "ocr_applied": r["ocr_applied"],
         "status": r["status"], "error": r["error"], "duration_s": r["duration_s"], "voice": r["voice"],
         "listened": r["listened"], "last_listened_at": r["last_listened_at"], "created_at": r["created_at"],
+        "abstract": r.get("abstract"),
     }
+    if "top_terms" in r:
+        out["top_terms"] = list(r["top_terms"] or [])
     if "job_state" in r:
         out["job"] = None if r["job_state"] is None else {
             "state": r["job_state"], "stage": r["job_stage"], "done": r["progress_done"],
@@ -152,16 +195,95 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
 
     # ------------------------------------------------------------------ library
     @app.get("/api/documents")
-    def list_documents(request: Request, q: str = Query("", max_length=200), sort: str = "added"):
+    def list_documents(request: Request, q: str = Query("", max_length=200), sort: str = "added",
+                       filters: dict = Depends(parse_filters)):
         order = SORTS.get(sort, SORTS["added"])
         like = f"%{q.strip()}%"
+        clause, params = filter_sql(filters)
         with pool(request).connection() as conn:
             rows = conn.execute(
                 DOC_LIST_SQL + " WHERE (%(q)s = '' OR d.title ILIKE %(like)s "
-                "OR array_to_string(d.authors, ' ') ILIKE %(like)s) ORDER BY " + order,
-                {"q": q.strip(), "like": like},
+                "OR array_to_string(d.authors, ' ') ILIKE %(like)s)" + clause + " ORDER BY " + order,
+                {**params, "q": q.strip(), "like": like},
             ).fetchall()
         return [_doc_out(r) for r in rows]
+
+    @app.get("/api/library/facets")
+    def library_facets(request: Request, filters: dict = Depends(parse_filters)):
+        """Counts for the facet column and the dashboard, over the papers that match the filters."""
+        clause, params = filter_sql(filters)
+        with pool(request).connection() as conn:
+            def count_by(expr: str) -> dict[str, int]:
+                rows = conn.execute(f"SELECT {expr} AS v, count(*) AS n FROM documents d "
+                                    f"WHERE TRUE{clause} GROUP BY 1", params).fetchall()
+                return {str(r["v"]): r["n"] for r in rows if r["v"] is not None}
+
+            totals = conn.execute(
+                "SELECT count(*) AS n, coalesce(sum(duration_s), 0) AS audio, "
+                "coalesce(sum(duration_s) FILTER (WHERE listened), 0) AS listened_audio "
+                f"FROM documents d WHERE TRUE{clause}", params).fetchone()
+            terms = conn.execute(
+                "SELECT k.kind, k.term, count(*) AS n FROM document_keywords k JOIN documents d ON d.id = k.document_id "
+                f"WHERE TRUE{clause} GROUP BY k.kind, k.term ORDER BY n DESC, k.term", params).fetchall()
+            by_kind: dict[str, list[dict[str, Any]]] = {k: [] for k in KEYWORD_KINDS}
+            for r in terms:
+                if len(by_kind[r["kind"]]) < 40:
+                    by_kind[r["kind"]].append({"term": r["term"], "count": r["n"]})
+            zotero_docs = conn.execute(
+                "SELECT count(*) AS n FROM documents d WHERE EXISTS (SELECT 1 FROM zotero_links z "
+                f"WHERE z.document_id = d.id) AND TRUE{clause}", params).fetchone()["n"]
+        return {
+            "total": totals["n"],
+            "audio_s": totals["audio"],
+            "listened_audio_s": totals["listened_audio"],
+            "status": count_by("d.status"),
+            "listened": {str(k).lower(): v for k, v in count_by("d.listened").items()},
+            "source": {**count_by("d.source_type"), "zotero": zotero_docs},
+            "years": [{"year": int(y), "count": n} for y, n in sorted(count_by("substring(d.published from '[0-9]{4}')").items())],
+            "terms": by_kind,
+        }
+
+    @app.get("/api/library/groups")
+    def library_groups(request: Request, filters: dict = Depends(parse_filters)):
+        """Papers grouped by similarity of their search terms (see library.py)."""
+        vecs, docs = _library_vectors(request, filters)
+        groups = [g for g in library.clusters(vecs) if len(g) > 1]
+        out = []
+        for members in sorted(groups, key=lambda g: -len(g)):
+            out.append({"label": library.label(members, vecs), "documents": [docs[m] for m in members]})
+        grouped = {m for g in groups for m in g}
+        return {"groups": out, "ungrouped": [docs[i] for i in docs if i not in grouped]}
+
+    @app.get("/api/library/graph")
+    def library_graph(request: Request, filters: dict = Depends(parse_filters)):
+        """Nodes are papers, edges connect papers with similar terms; `group` numbers the groups."""
+        vecs, docs = _library_vectors(request, filters)
+        group_of: dict[str, int] = {}
+        for n, members in enumerate(library.clusters(vecs)):
+            for m in members:
+                group_of[m] = n
+        nodes = [{**docs[i], "group": group_of.get(i, -1)} for i in docs]
+        links = []
+        for a, b, weight in library.edges(vecs):
+            links.append({"source": a, "target": b, "weight": weight,
+                          "terms": library.shared_terms(vecs[a], vecs[b])})
+        return {"nodes": nodes, "links": links}
+
+    def _library_vectors(request: Request, filters: dict[str, Any]):
+        clause, params = filter_sql(filters)
+        with pool(request).connection() as conn:
+            rows = conn.execute(
+                "SELECT d.id, k.kind, k.term, k.weight FROM documents d "
+                f"JOIN document_keywords k ON k.document_id = d.id WHERE TRUE{clause}", params,
+            ).fetchall()
+            meta = conn.execute(
+                f"SELECT d.id, d.title, d.published, d.status, d.listened, d.source_type, d.duration_s "
+                f"FROM documents d WHERE TRUE{clause}", params).fetchall()
+        docs = {str(m["id"]): {"id": str(m["id"]), "title": m["title"] or "Untitled",
+                               "year": (m["published"] or "")[:4] or None, "status": m["status"],
+                               "listened": m["listened"], "source": m["source_type"]} for m in meta}
+        vecs = library.vectors((str(r["id"]), r["kind"], r["term"], r["weight"]) for r in rows)
+        return vecs, docs
 
     @app.post("/api/documents", status_code=201)
     def upload(request: Request, file: UploadFile = File(...)):

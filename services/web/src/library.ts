@@ -1,5 +1,6 @@
-import { api, type Doc } from "./api";
+import { api, type Doc, type Facets, type Filters, type GroupDoc, type Groups, NO_FILTERS } from "./api";
 import { authors, date, duration, h, icon, toast } from "./dom";
+import { facetColumn } from "./facets";
 import type { View } from "./main";
 
 const STAGES: Record<string, string> = {
@@ -10,6 +11,12 @@ const STAGES: Record<string, string> = {
   chapters: "Naming chapters",
   synthesis: "Generating audio",
 };
+
+type Mode = "list" | "groups";
+const MODES: [Mode, string][] = [
+  ["list", "List"],
+  ["groups", "Groups"],
+];
 
 /** Actions that re-run processing make no sense while it is running or before the item was queued. */
 function notProcessed(doc: Doc): boolean {
@@ -39,24 +46,52 @@ function statusOf(doc: Doc): { label: string; tone: string; progress: number | n
 
 export function libraryView(): View {
   let docs: Doc[] = [];
+  let facets: Facets | null = null;
+  let groups: Groups | null = null;
+  let filters: Filters = { ...NO_FILTERS };
   let query = "";
   let sort = localStore("sort") ?? "added";
+  let mode: Mode = (localStore("view") as Mode) === "groups" ? "groups" : "list";
   let timer = 0;
   let destroyed = false;
+  let lastKey = "";
   const uploads = new Map<string, number>(); // file name -> progress
 
-  const list = h("ul", { class: "doc-list", "aria-live": "polite" });
-  const uploadList = h("ul", { class: "upload-list" });
-  const fileInput = h("input", { type: "file", accept: "application/pdf,.pdf", multiple: true, hidden: true }) as HTMLInputElement;
-  const urlInput = h("input", {
-    type: "url", name: "url", placeholder: "https://arxiv.org/abs/… or any article URL", required: true,
-    "aria-label": "Article or paper URL", autocomplete: "off",
-  }) as HTMLInputElement;
+  // ---------------------------------------------------------------- abstract listening
+  // The overview track is the abstract (see worker/pipeline.py), so it plays from the library.
+  const audio = new Audio();
+  const barTitle = h("span", { class: "bar-title" });
+  const barPlay = h("button", { type: "button", class: "icon-btn", "aria-label": "Play", onclick: () => (audio.paused ? audio.play() : audio.pause()) }, icon("play"));
+  const abstractBar = h(
+    "div",
+    { class: "abstract-bar", hidden: true, role: "region", "aria-label": "Abstract player" },
+    barPlay,
+    barTitle,
+    h("button", { type: "button", class: "icon-btn", "aria-label": "Close", onclick: () => { audio.pause(); abstractBar.hidden = true; } }, "×"),
+  );
+  audio.addEventListener("play", () => barPlay.replaceChildren(icon("pause")));
+  audio.addEventListener("pause", () => barPlay.replaceChildren(icon("play")));
+  audio.addEventListener("ended", () => barPlay.replaceChildren(icon("play")));
 
+  function listenAbstract(doc: Doc): void {
+    audio.src = api.audioUrl(doc.id, 0);
+    barTitle.textContent = `Abstract · ${doc.title}`;
+    abstractBar.hidden = false;
+    audio.play().catch(() => toast("Press play to listen.", "info"));
+  }
+
+  // ---------------------------------------------------------------- loading
   async function load(): Promise<void> {
     try {
-      docs = await api.documents(query, sort);
-      renderList();
+      const [list, stats] = await Promise.all([api.documents(query, sort, filters), api.facets(filters)]);
+      docs = list;
+      facets = stats;
+      if (mode === "groups") groups = await api.groups(filters);
+      const key = JSON.stringify([docs, facets, groups, filters, mode]);
+      if (key !== lastKey) {
+        lastKey = key;
+        render();
+      }
     } catch (e) {
       toast((e as Error).message, "error");
     }
@@ -65,6 +100,12 @@ export function libraryView(): View {
       const busy = docs.some((d) => d.status === "queued" || d.status === "processing");
       timer = window.setTimeout(load, busy ? 3000 : 20000);
     }
+  }
+
+  function setFilters(next: Filters): void {
+    filters = next;
+    groups = null;
+    load();
   }
 
   async function addFiles(files: Iterable<File>): Promise<void> {
@@ -111,7 +152,7 @@ export function libraryView(): View {
         toast("Audio will be generated again with the current voice settings.");
       } else if (action === "rerun-chapters") {
         await api.rerun(doc.id, "chapters");
-        toast("Chapters and summaries will be rebuilt.");
+        toast("Chapters will be rebuilt.");
       } else if (action === "rerun-start") {
         await api.rerun(doc.id, "start");
         toast("Processing starts over.");
@@ -125,6 +166,11 @@ export function libraryView(): View {
     load();
   }
 
+  function addTerm(term: string): void {
+    if (!filters.term.includes(term)) setFilters({ ...filters, term: [...filters.term, term] });
+  }
+
+  // ---------------------------------------------------------------- cards
   function card(doc: Doc): HTMLElement {
     const s = statusOf(doc);
     const openable = doc.chapters_ready > 0 || doc.has_pdf || doc.status === "ready";
@@ -146,6 +192,7 @@ export function libraryView(): View {
     const title = openable
       ? h("a", { href: `/doc/${doc.id}`, "data-link": true, class: "doc-title" }, doc.title)
       : h("span", { class: "doc-title" }, doc.title);
+    const newTerms = (doc.top_terms ?? []).filter((t) => !filters.term.includes(t));
     return h(
       "li",
       { class: `doc-card${doc.listened ? " listened" : ""}` },
@@ -166,8 +213,16 @@ export function libraryView(): View {
             ? h("a", { href: `/doc/${doc.id}`, "data-link": true, class: "chip link" }, `${doc.chapters_ready} chapters playable`)
             : null,
         ),
+        newTerms.length
+          ? h(
+              "div",
+              { class: "doc-terms" },
+              ...newTerms.map((t) => h("button", { type: "button", class: "chip term", title: "Filter by this term", onclick: () => addTerm(t) }, t)),
+            )
+          : null,
         s.progress !== null ? h("progress", { max: 1, value: s.progress, "aria-label": s.label }) : null,
         s.detail ? h("p", { class: `doc-detail ${s.tone}` }, s.detail) : null,
+        doc.abstract ? h("details", { class: "abstract-toggle" }, h("summary", {}, "Abstract"), h("p", {}, doc.abstract)) : null,
       ),
       h(
         "div",
@@ -175,24 +230,141 @@ export function libraryView(): View {
         doc.status === "catalogued"
           ? h("button", { type: "button", class: "btn small primary", onclick: () => act(doc, "queue") }, "Queue")
           : doc.status === "failed"
-          ? h("button", { type: "button", class: "btn small", onclick: () => act(doc, "rerun-start") }, "Retry")
-          : openable
-            ? h("a", { href: `/doc/${doc.id}`, "data-link": true, class: "btn small primary" }, doc.playback ? "Resume" : "Open")
-            : null,
+            ? h("button", { type: "button", class: "btn small", onclick: () => act(doc, "rerun-start") }, "Retry")
+            : openable
+              ? h("a", { href: `/doc/${doc.id}`, "data-link": true, class: "btn small primary" }, doc.playback ? "Resume" : "Open")
+              : null,
+        doc.chapters_ready > 0
+          ? h("button", { type: "button", class: "btn small", title: "Listen to the abstract", onclick: () => listenAbstract(doc) }, icon("play"), "Abstract")
+          : null,
         menu,
       ),
     );
   }
 
-  function renderList(): void {
+  function renderList(): HTMLElement {
     if (!docs.length) {
-      list.replaceChildren(
-        h("li", { class: "empty" }, query ? `Nothing matches “${query}”.` : "Your library is empty. Add a PDF or paste a link above to get started."),
-      );
-      return;
+      const hasFilter = query || filters.term.length || filters.year || filters.source || filters.listened !== null || filters.status;
+      return h("ul", { class: "doc-list" }, h("li", { class: "empty" }, hasFilter ? "Nothing matches these filters." : "Your library is empty. Add a PDF or paste a link above to get started."));
     }
-    list.replaceChildren(...docs.map(card));
+    return h("ul", { class: "doc-list", "aria-live": "polite" }, ...docs.map(card));
   }
+
+  // ---------------------------------------------------------------- groups
+  function groupItem(d: GroupDoc): HTMLElement {
+    const meta = [d.year, d.listened ? "listened" : null].filter(Boolean).join(" · ");
+    const link = d.status === "ready" || d.status === "processing"
+      ? h("a", { href: `/doc/${d.id}`, "data-link": true }, d.title)
+      : h("span", {}, d.title);
+    return h("li", {}, link, meta ? h("span", { class: "quiet" }, ` · ${meta}`) : null);
+  }
+
+  function renderGroups(): HTMLElement {
+    if (!groups) return h("p", { class: "pane-message" }, "Grouping papers…");
+    if (!groups.groups.length && !groups.ungrouped.length) return h("p", { class: "empty" }, "No papers match these filters.");
+    return h(
+      "div",
+      { class: "groups" },
+      ...groups.groups.map((g) =>
+        h(
+          "details",
+          { class: "group", open: true },
+          h("summary", {}, h("span", { class: "group-label" }, g.label.join(" · ")), h("span", { class: "chip" }, `${g.documents.length} papers`)),
+          h("ul", { class: "group-docs" }, ...g.documents.map(groupItem)),
+        ),
+      ),
+      groups.ungrouped.length
+        ? h(
+            "details",
+            { class: "group" },
+            h("summary", {}, h("span", { class: "group-label" }, "Not similar to other papers"), h("span", { class: "chip" }, String(groups.ungrouped.length))),
+            h("ul", { class: "group-docs" }, ...groups.ungrouped.map(groupItem)),
+          )
+        : null,
+    );
+  }
+
+  // ---------------------------------------------------------------- dashboard
+  function dashboard(): HTMLElement {
+    if (!facets) return h("div", { class: "dash" });
+    const f = facets;
+    const hours = (s: number) => `${(s / 3600).toFixed(1)} h`;
+    const tile = (label: string, value: string, onclick?: () => void) =>
+      h(
+        onclick ? "button" : "div",
+        { type: onclick ? "button" : undefined, class: "tile", onclick: onclick ?? null },
+        h("span", { class: "tile-value" }, value),
+        h("span", { class: "tile-label" }, label),
+      );
+    const maxYear = Math.max(1, ...f.years.map((y) => y.count));
+    return h(
+      "div",
+      { class: "dash", "aria-label": "Library at a glance" },
+      tile("Papers and articles", String(f.total), () => setFilters({ ...NO_FILTERS })),
+      tile("Papers", String(f.source.pdf), () => setFilters({ ...NO_FILTERS, source: "pdf" })),
+      tile("Articles", String(f.source.url), () => setFilters({ ...NO_FILTERS, source: "url" })),
+      tile("Listened", String(f.listened.true ?? 0), () => setFilters({ ...NO_FILTERS, listened: true })),
+      tile("Listened audio", hours(f.listened_audio_s)),
+      tile("Audio in library", hours(f.audio_s)),
+      f.source.zotero ? tile("From Zotero", String(f.source.zotero), () => setFilters({ ...NO_FILTERS, source: "zotero" })) : null,
+      f.status.catalogued ? tile("Not queued", String(f.status.catalogued), () => setFilters({ ...NO_FILTERS, status: "catalogued" })) : null,
+      f.years.length
+        ? h(
+            "div",
+            { class: "years", "aria-label": "Papers per year" },
+            ...f.years.map((y) =>
+              h("button", {
+                type: "button",
+                class: `year-bar${filters.year === String(y.year) ? " on" : ""}`,
+                title: `${y.year}: ${y.count}`,
+                "aria-label": `${y.year}: ${y.count} papers`,
+                style: `height:${Math.max(8, (y.count / maxYear) * 100)}%`,
+                onclick: () => setFilters({ ...filters, year: filters.year === String(y.year) ? null : String(y.year) }),
+              }),
+            ),
+            h("span", { class: "years-range" }, `${f.years[0].year}–${f.years[f.years.length - 1].year}`),
+          )
+        : null,
+    );
+  }
+
+  // ---------------------------------------------------------------- layout
+  function resultsHead(): HTMLElement {
+    const tabs = h(
+      "div",
+      { class: "pane-tabs", role: "tablist" },
+      ...MODES.map(([m, label]) =>
+        h("button", {
+          type: "button",
+          role: "tab",
+          "aria-selected": String(m === mode),
+          onclick: () => {
+            mode = m;
+            localStore("view", m);
+            if (m === "groups") groups = null;
+            load();
+          },
+        }, label),
+      ),
+    );
+    const count = facets ? `${facets.total} ${facets.total === 1 ? "item" : "items"}` : "";
+    return h("div", { class: "results-head" }, h("span", { class: "quiet" }, count), tabs);
+  }
+
+  function render(): void {
+    dashSlot.replaceChildren(dashboard());
+    facetSlot.replaceChildren(facetColumn(facets, filters, setFilters));
+    headSlot.replaceChildren(resultsHead());
+    bodySlot.replaceChildren(mode === "groups" ? renderGroups() : renderList());
+  }
+
+  // ---------------------------------------------------------------- inputs
+  const uploadList = h("ul", { class: "upload-list" });
+  const fileInput = h("input", { type: "file", accept: "application/pdf,.pdf", multiple: true, hidden: true }) as HTMLInputElement;
+  const urlInput = h("input", {
+    type: "url", name: "url", placeholder: "https://arxiv.org/abs/… or any article URL", required: true,
+    "aria-label": "Article or paper URL", autocomplete: "off",
+  }) as HTMLInputElement;
 
   const drop = h(
     "label",
@@ -244,7 +416,7 @@ export function libraryView(): View {
 
   let searchTimer = 0;
   const search = h("input", {
-    type: "search", placeholder: "Search title or author", "aria-label": "Search the library",
+    type: "search", placeholder: "Search title or author", "aria-label": "Search the library", value: "",
     oninput: (e: Event) => {
       query = (e.target as HTMLInputElement).value;
       window.clearTimeout(searchTimer);
@@ -266,13 +438,23 @@ export function libraryView(): View {
     ),
   );
 
+  const dashSlot = h("div");
+  const facetSlot = h("div", { class: "facet-slot" });
+  const headSlot = h("div");
+  const bodySlot = h("div", { class: "results-body" });
   const el = h(
     "section",
     { class: "library" },
     h("h1", { class: "visually-hidden" }, "Library"),
     h("div", { class: "add-panel" }, drop, urlForm, uploadList),
-    h("div", { class: "toolbar" }, search, sortSelect),
-    list,
+    dashSlot,
+    h(
+      "div",
+      { class: "library-body" },
+      facetSlot,
+      h("div", { class: "results" }, h("div", { class: "toolbar" }, search, sortSelect), headSlot, bodySlot),
+    ),
+    abstractBar,
   );
   load();
   return {
@@ -281,6 +463,9 @@ export function libraryView(): View {
     destroy: () => {
       destroyed = true;
       window.clearTimeout(timer);
+      window.clearTimeout(searchTimer);
+      audio.pause();
+      audio.removeAttribute("src");
     },
   };
 }

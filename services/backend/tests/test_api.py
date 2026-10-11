@@ -176,3 +176,48 @@ def test_spa_fallback_and_no_traversal(client):
     assert client.get("/../secret.txt", headers=AUTH).text == "<html>app</html>"
     assert client.get("/assets/%2e%2e/%2e%2e/secret.txt", headers=AUTH).text != "do not serve"
     assert client.get("/api/nope", headers=AUTH).status_code == 404
+
+
+def _library_doc(settings, title, published, status, terms, listened=False, source="pdf"):
+    with psycopg.connect(settings.database_url, autocommit=True) as conn:
+        doc_id = conn.execute(
+            "INSERT INTO documents (source_type, title, published, status, listened, duration_s) "
+            "VALUES (%s, %s, %s, %s, %s, 600) RETURNING id",
+            (source, title, published, status, listened)).fetchone()[0]
+        for kind, term in terms:
+            conn.execute("INSERT INTO document_keywords (document_id, kind, term, source) "
+                         "VALUES (%s, %s, %s, 'llm')", (doc_id, kind, term))
+    return str(doc_id)
+
+
+def test_library_filters_facets_groups_and_graph(client, settings):
+    a = _library_doc(settings, "Head pruning", "2024-05-02", "ready",
+                     [("method", "head pruning"), ("task", "machine translation")], listened=True)
+    b = _library_doc(settings, "Pruning again", "2024-07-01", "ready",
+                     [("method", "head pruning"), ("task", "machine translation")], source="url")
+    _library_doc(settings, "Sleep", "2019", "ready", [("task", "sleep consolidation")])
+
+    titles = lambda q: sorted(d["title"] for d in client.get(q, headers=AUTH).json())  # noqa: E731
+    assert titles("/api/documents?term=head%20pruning") == ["Head pruning", "Pruning again"]
+    assert titles("/api/documents?term=head%20pruning&term=machine%20translation&listened=true") == ["Head pruning"]
+    assert titles("/api/documents?year=2024") == ["Head pruning", "Pruning again"]
+    assert titles("/api/documents?source=url") == ["Pruning again"]
+    assert titles("/api/documents?status=queued") == []
+    assert client.get("/api/documents?year=24", headers=AUTH).status_code == 422
+
+    facets = client.get("/api/library/facets", headers=AUTH).json()
+    assert facets["total"] == 3 and facets["audio_s"] == 1800 and facets["listened_audio_s"] == 600
+    assert facets["source"] == {"pdf": 2, "url": 1, "zotero": 0}
+    assert facets["years"] == [{"year": 2019, "count": 1}, {"year": 2024, "count": 2}]
+    assert facets["terms"]["method"] == [{"term": "head pruning", "count": 2}]
+    narrowed = client.get("/api/library/facets?term=head%20pruning", headers=AUTH).json()
+    assert narrowed["total"] == 2 and narrowed["listened"] == {"true": 1, "false": 1}
+
+    groups = client.get("/api/library/groups", headers=AUTH).json()
+    assert [sorted(d["id"] for d in g["documents"]) for g in groups["groups"]] == [sorted([a, b])]
+    assert "head pruning" in groups["groups"][0]["label"] and [d["title"] for d in groups["ungrouped"]] == ["Sleep"]
+
+    graph = client.get("/api/library/graph", headers=AUTH).json()
+    group = {n["title"]: n["group"] for n in graph["nodes"]}
+    assert len(graph["nodes"]) == 3 and group["Head pruning"] == group["Pruning again"] != group["Sleep"]
+    assert [(link["source"], link["target"]) for link in graph["links"]] == [tuple(sorted((a, b)))]
