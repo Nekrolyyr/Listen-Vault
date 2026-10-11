@@ -17,7 +17,7 @@ from psycopg_pool import ConnectionPool
 
 from .config import Settings
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("listen.zotero")
 
 API_URL = "https://api.zotero.org"
 PAGE = 100
@@ -34,29 +34,43 @@ class ZoteroError(Exception):
 class ZoteroClient:
     def __init__(self, user_id: str | None, api_key: str, http: httpx.Client | None = None,
                  storage: httpx.Client | None = None):
-        # Library paths need the numeric user ID, which is not the username. When it is not given, the API key
-        # tells it: GET /keys/current returns "userID".
-        self.user_id = user_id or None
+        # Library paths need the numeric user ID, which is not the username. When it is not given (or is a
+        # username, which Zotero refuses with "Invalid user ID"), the API key tells it: GET /keys/current
+        # returns "userID".
+        user_id = (user_id or "").strip()
+        if user_id and not user_id.isdigit():
+            log.warning("ZOTERO_USER_ID is not a numeric user ID; using the user ID of the API key instead. "
+                        "Clear ZOTERO_USER_ID in .env to silence this warning.")
+            user_id = ""
+        self.user_id: str | None = user_id or None
         self.http = http or httpx.Client(base_url=API_URL, timeout=60,
                                          headers={"Zotero-API-Key": api_key, "Zotero-API-Version": "3"})
         self.storage = storage or httpx.Client(timeout=300)  # no API key here
 
     def _get(self, path: str, params: dict | None = None) -> httpx.Response:
+        # the path and the parameter names only: the key is a header, and nothing here logs headers
+        log.debug("GET %s %s", path, sorted(params or {}))
         try:
             resp = self.http.get(path, params=params)
         except httpx.HTTPError as e:
+            log.warning("GET %s failed: %s", path, e)
             raise ZoteroError(f"Zotero unreachable: {e}", retryable=True) from e
         if resp.status_code in (429, 503):
+            log.warning("GET %s: HTTP %s (busy or rate limited)", path, resp.status_code)
             raise ZoteroError("Zotero is busy or rate limiting; it will be tried again", retryable=True)
         if resp.status_code == 403:
+            log.warning("GET %s: HTTP 403 (the key lacks access, or it is wrong)", path)
             raise ZoteroError("Zotero refused the API key (check ZOTERO_API_KEY and its library access)")
         if resp.status_code >= 400:
-            raise ZoteroError(f"Zotero returned HTTP {resp.status_code}")
+            detail = " ".join(resp.text.split())[:200]  # Zotero explains refusals in plain text
+            log.warning("GET %s: HTTP %s: %s", path, resp.status_code, detail or "(no message)")
+            raise ZoteroError(f"Zotero returned HTTP {resp.status_code}" + (f": {detail}" if detail else ""))
         return resp
 
     def user(self) -> str:
         if self.user_id is None:
             self.user_id = str(self._get("/keys/current").json()["userID"])
+            log.info("Zotero user ID %s taken from the API key", self.user_id)
         return self.user_id
 
     def changes_since(self, version: int) -> tuple[list[dict[str, Any]], int]:
@@ -64,6 +78,7 @@ class ZoteroClient:
         items: list[dict[str, Any]] = []
         start = 0
         library_version = version
+        pages = 0
         while True:
             resp = self._get(f"/users/{self.user()}/items",
                              {"since": version, "format": "json", "limit": PAGE, "start": start})
@@ -71,8 +86,12 @@ class ZoteroClient:
                 # the version at the start of the sync: anything changed while paging is fetched next time
                 library_version = int(resp.headers.get("Last-Modified-Version", version))
             page = resp.json()
+            pages += 1
+            log.debug("changes page %d: %d items (start %d)", pages, len(page), start)
             items += page
             if len(page) < PAGE:
+                log.info("Zotero changes since version %d: %d items in %d page(s); library version %d",
+                         version, len(items), pages, library_version)
                 return items, library_version
             start += PAGE
 
@@ -88,9 +107,12 @@ class ZoteroClient:
         except httpx.HTTPError as e:
             raise ZoteroError(f"Zotero file download failed: {e}", retryable=True) from e
         if resp.status_code != 200:
+            log.warning("PDF download for attachment %s: HTTP %s", attachment_key, resp.status_code)
             raise ZoteroError(f"Zotero file download failed: HTTP {resp.status_code}")
         if not resp.content.startswith(b"%PDF-"):
+            log.warning("attachment %s is not a PDF (%d bytes)", attachment_key, len(resp.content))
             raise ZoteroError("The attachment in Zotero is not a PDF")
+        log.info("PDF of attachment %s downloaded: %d bytes", attachment_key, len(resp.content))
         return resp.content
 
 
@@ -149,9 +171,11 @@ def sync(pool: ConnectionPool, settings: Settings, client: ZoteroClient | None =
     client = client or ZoteroClient(settings.zotero_user_id, settings.zotero_api_key)
     with pool.connection() as conn:
         last = conn.execute("SELECT last_version FROM zotero_state WHERE id = 1").fetchone()["last_version"]
+    log.info("zotero sync starts from library version %d", last)
     try:
         items, version = client.changes_since(last)
     except ZoteroError as e:
+        log.warning("zotero sync failed, will be retried: %s", e)
         with pool.connection() as conn:
             conn.execute("UPDATE zotero_state SET last_error = %s WHERE id = 1", (str(e),))
         raise
@@ -179,5 +203,6 @@ def sync(pool: ConnectionPool, settings: Settings, client: ZoteroClient | None =
                 conn.execute("UPDATE zotero_links SET pdf_attachment = %s WHERE zotero_key = %s", (att, parent))
         conn.execute("UPDATE zotero_state SET last_version = %s, last_synced_at = now(), last_error = NULL WHERE id = 1",
                      (version,))
-    log.info("zotero sync: %s", counts)
+    log.info("zotero sync done: %d papers (%d new or changed to catalogued), %d PDF attachments, library version %d",
+             counts["items"], counts["catalogued"], len(pdfs), version)
     return counts

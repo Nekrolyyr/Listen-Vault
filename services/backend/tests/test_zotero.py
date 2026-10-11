@@ -171,3 +171,50 @@ def test_user_id_is_looked_up_from_the_api_key(settings, pool):
     counts = zotero.sync(pool, _settings(settings), client)
     assert counts["items"] == 1
     assert seen == ["/keys/current", "/users/19247461/items"]  # looked up once, then used
+
+
+def test_username_in_the_environment_is_replaced_by_the_key_lookup(settings, pool, caplog):
+    """ZOTERO_USER_ID set to the username (as in .env) used to be sent as it is and refused with 400."""
+    seen = []
+
+    def handler(request: httpx.Request):
+        seen.append(request.url.path)
+        if request.url.path == "/keys/current":
+            return httpx.Response(200, json={"userID": 19247461, "username": "Erudyyr"})
+        if request.url.path == "/users/Erudyyr/items":
+            return httpx.Response(400, text="Invalid user ID")
+        return httpx.Response(200, json=[PAPER], headers={"Last-Modified-Version": "42"})
+
+    http = httpx.Client(base_url=zotero.API_URL, transport=httpx.MockTransport(handler),
+                        headers={"Zotero-API-Key": "secret", "Zotero-API-Version": "3"})
+    client = zotero.ZoteroClient("Erudyyr", "secret", http=http)
+    with caplog.at_level("INFO", logger="listen.zotero"):
+        counts = zotero.sync(pool, _settings(settings), client)
+    assert counts["items"] == 1
+    assert seen == ["/keys/current", "/users/19247461/items"]
+    assert "not a numeric user ID" in caplog.text
+    assert "Zotero user ID 19247461 taken from the API key" in caplog.text
+    assert "zotero sync done: 1 papers" in caplog.text
+
+
+def test_refusal_keeps_zotero_text_in_the_error_and_the_log(settings, pool, caplog):
+    http = httpx.Client(base_url=zotero.API_URL,
+                        transport=httpx.MockTransport(lambda r: httpx.Response(400, text="Invalid user ID")),
+                        headers={"Zotero-API-Key": "secret"})
+    client = zotero.ZoteroClient("1", "secret", http=http)
+    with caplog.at_level("WARNING", logger="listen.zotero"), pytest.raises(zotero.ZoteroError) as info:
+        zotero.sync(pool, _settings(settings), client)
+    assert str(info.value) == "Zotero returned HTTP 400: Invalid user ID"
+    assert "GET /users/1/items: HTTP 400: Invalid user ID" in caplog.text
+    with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
+        assert conn.execute("SELECT last_error FROM zotero_state").fetchone()["last_error"].endswith("Invalid user ID")
+
+
+def test_the_api_key_never_reaches_the_log(settings, pool, caplog):
+    http = httpx.Client(base_url=zotero.API_URL,
+                        transport=httpx.MockTransport(lambda r: httpx.Response(503)),
+                        headers={"Zotero-API-Key": "secret"})
+    client = zotero.ZoteroClient("1", "secret", http=http)
+    with caplog.at_level("DEBUG", logger="listen.zotero"), pytest.raises(zotero.ZoteroError):
+        zotero.sync(pool, _settings(settings), client)
+    assert "secret" not in caplog.text
