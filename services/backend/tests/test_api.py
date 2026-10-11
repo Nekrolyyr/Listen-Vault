@@ -146,7 +146,8 @@ def test_playback_and_settings(client):
     assert client.get(f"/api/documents/{doc_id}/playback", headers=AUTH).json() == {
         "chapter_idx": 2, "position_s": 81.5, "rate": 1.25}
     listed = client.get("/api/documents?sort=listened", headers=AUTH).json()[0]
-    assert listed["playback"] == {"chapter_idx": 2, "position_s": 81.5}
+    assert listed["playback"] == {"chapter_idx": 2, "position_s": 81.5, "chapter_title": None,
+                                  "listened_s": 81.5, "progress": None}  # no chapters or duration here
 
     s = client.get("/api/settings", headers=AUTH).json()
     assert s["values"]["voice"] == "af_heart" and "bm_george" in s["voices"]
@@ -200,15 +201,22 @@ def test_library_filters_facets_groups_and_graph(client, settings):
     titles = lambda q: sorted(d["title"] for d in client.get(q, headers=AUTH).json())  # noqa: E731
     assert titles("/api/documents?term=head%20pruning") == ["Head pruning", "Pruning again"]
     assert titles("/api/documents?term=head%20pruning&term=machine%20translation&listened=true") == ["Head pruning"]
-    assert titles("/api/documents?year=2024") == ["Head pruning", "Pruning again"]
+    assert titles("/api/documents?year_from=2024&year_to=2024") == ["Head pruning", "Pruning again"]
+    assert titles("/api/documents?year_from=2020") == ["Head pruning", "Pruning again"]  # the 2019 paper is out
+    assert titles("/api/documents?year_to=2019") == ["Sleep"]
+    assert titles("/api/documents?year_from=2025") == []
     assert titles("/api/documents?source=url") == ["Pruning again"]
     assert titles("/api/documents?status=queued") == []
-    assert client.get("/api/documents?year=24", headers=AUTH).status_code == 422
+    assert client.get("/api/documents?year_from=24", headers=AUTH).status_code == 422
 
     facets = client.get("/api/library/facets", headers=AUTH).json()
     assert facets["total"] == 3 and facets["audio_s"] == 1800 and facets["listened_audio_s"] == 600
     assert facets["source"] == {"pdf": 2, "url": 1, "zotero": 0}
     assert facets["years"] == [{"year": 2019, "count": 1}, {"year": 2024, "count": 2}]
+    assert facets["year_bounds"] == [2019, 2024]
+    narrowed_years = client.get("/api/library/facets?year_from=2024", headers=AUTH).json()
+    assert narrowed_years["years"] == [{"year": 2024, "count": 2}]
+    assert narrowed_years["year_bounds"] == [2019, 2024]  # the whole library, not the filtered papers
     assert facets["terms"]["method"] == [{"term": "head pruning", "count": 2}]
     narrowed = client.get("/api/library/facets?term=head%20pruning", headers=AUTH).json()
     assert narrowed["total"] == 2 and narrowed["listened"] == {"true": 1, "false": 1}
@@ -263,3 +271,31 @@ def test_queue_all_catalogued_is_manual_and_skips_unlinked_items(client, setting
     with psycopg.connect(settings.database_url, autocommit=True) as conn:
         statuses = dict(conn.execute("SELECT title, status FROM documents").fetchall())
     assert statuses == {"With PDF": "queued", "With link": "queued", "Nothing": "catalogued"}
+
+
+def test_not_zotero_hides_linked_papers(client, settings):
+    linked = _library_doc(settings, "From Zotero", "2024", "ready", [("task", "linked task")])
+    _library_doc(settings, "Uploaded", "2024", "ready", [("task", "other task")])
+    with psycopg.connect(settings.database_url, autocommit=True) as conn:
+        conn.execute("INSERT INTO zotero_links (document_id, zotero_key, library_version) VALUES (%s, 'K1', 1)", (linked,))
+    titles = lambda q: sorted(d["title"] for d in client.get(q, headers=AUTH).json())  # noqa: E731
+    assert titles("/api/documents?not_zotero=true") == ["Uploaded"]
+    assert titles("/api/documents?not_zotero=false") == ["From Zotero", "Uploaded"]
+    assert titles("/api/documents?source=zotero&not_zotero=true") == []
+    facets = client.get("/api/library/facets?not_zotero=true", headers=AUTH).json()
+    assert facets["total"] == 1 and facets["source"]["zotero"] == 0
+
+
+def test_playback_shows_the_chapter_and_progress_through_the_paper(client, settings):
+    doc = _library_doc(settings, "Long paper", "2024", "ready", [("task", "long task")])
+    with psycopg.connect(settings.database_url, autocommit=True) as conn:
+        conn.execute("UPDATE documents SET duration_s = 1000 WHERE id = %s", (doc,))
+        conn.execute("INSERT INTO chapters (document_id, idx, kind, title, duration_s) VALUES "
+                     "(%s, 0, 'overview', 'Overview', 100), (%s, 1, 'chapter', 'Methods', 300), "
+                     "(%s, 2, 'chapter', 'Results', 600)", (doc, doc, doc))
+    client.put(f"/api/documents/{doc}/playback", json={"chapter_idx": 1, "position_s": 150, "rate": 1.0}, headers=AUTH)
+    listed = client.get("/api/documents", headers=AUTH).json()[0]
+    assert listed["playback"]["chapter_title"] == "Methods"
+    assert listed["playback"]["listened_s"] == 250.0  # 100 s of the overview, then 150 s into Methods
+    assert listed["playback"]["progress"] == 0.25
+    assert listed["listened"] is False

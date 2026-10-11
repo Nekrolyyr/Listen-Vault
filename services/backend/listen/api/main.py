@@ -37,6 +37,9 @@ SELECT d.*, j.state AS job_state, j.stage AS job_stage, j.progress_done, j.progr
        (SELECT count(*) FROM chapters c WHERE c.document_id = d.id) AS chapter_count,
        (SELECT count(*) FROM chapters c WHERE c.document_id = d.id AND c.audio_file IS NOT NULL) AS ready_count,
        p.chapter_idx AS play_chapter, p.position_s AS play_position,
+       (SELECT c.title FROM chapters c WHERE c.document_id = d.id AND c.idx = p.chapter_idx) AS play_chapter_title,
+       (SELECT coalesce(sum(c.duration_s), 0) FROM chapters c
+          WHERE c.document_id = d.id AND c.idx < p.chapter_idx) AS play_before_s,
        (z.document_id IS NOT NULL) AS from_zotero,
        (SELECT coalesce(array_agg(t.term ORDER BY t.weight DESC), '{}') FROM (
             SELECT k.term, k.weight FROM document_keywords k
@@ -56,14 +59,17 @@ SORTS = {
 
 def parse_filters(
     term: list[str] = Query(default=[], max_length=20),
-    year: str | None = Query(default=None, pattern=r"^\d{4}$"),
+    year_from: int | None = Query(default=None, ge=1000, le=2999),
+    year_to: int | None = Query(default=None, ge=1000, le=2999),
     source: str | None = Query(default=None, pattern=r"^(pdf|url|zotero)$"),
+    not_zotero: bool = False,
     listened: bool | None = None,
     status: str | None = Query(default=None, pattern=r"^(catalogued|queued|processing|ready|failed)$"),
 ) -> dict[str, Any]:
-    """Library filters shared by the list, the facets, the groups and the graph. Terms must all match."""
-    return {"term": [t.strip().lower() for t in term if t.strip()][:20], "year": year, "source": source,
-            "listened": listened, "status": status}
+    """Library filters shared by the list, the facets, the groups and the graph. Terms must all match.
+    Years are inclusive; a paper without a publication year is outside any year range."""
+    return {"term": [t.strip().lower() for t in term if t.strip()][:20], "year_from": year_from,
+            "year_to": year_to, "source": source, "not_zotero": not_zotero, "listened": listened, "status": status}
 
 
 def filter_sql(f: dict[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -73,9 +79,16 @@ def filter_sql(f: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     for i, term in enumerate(f["term"]):
         clauses.append(f"EXISTS (SELECT 1 FROM document_keywords k WHERE k.document_id = d.id AND k.term = %(t{i})s)")
         params[f"t{i}"] = term
-    if f["year"]:
-        clauses.append("substring(d.published from '[0-9]{4}') = %(year)s")
-        params["year"] = f["year"]
+    if f["year_from"] is not None or f["year_to"] is not None:
+        year = "substring(d.published from '[0-9]{4}')::int"
+        if f["year_from"] is not None:
+            clauses.append(f"{year} >= %(year_from)s")
+            params["year_from"] = f["year_from"]
+        if f["year_to"] is not None:
+            clauses.append(f"{year} <= %(year_to)s")
+            params["year_to"] = f["year_to"]
+    if f["not_zotero"]:
+        clauses.append("NOT EXISTS (SELECT 1 FROM zotero_links z WHERE z.document_id = d.id)")
     if f["source"] == "zotero":
         clauses.append("EXISTS (SELECT 1 FROM zotero_links z WHERE z.document_id = d.id)")
     elif f["source"] in ("pdf", "url"):
@@ -118,6 +131,17 @@ def _question_out(r: dict[str, Any]) -> dict[str, Any]:
             "status": r["status"], "error": r["error"], "created_at": r["created_at"]}
 
 
+def _playback_out(r: dict[str, Any]) -> dict[str, Any]:
+    """Where a paper was left: the chapter, the position, and how far through the paper that is."""
+    listened_s = float(r["play_before_s"] or 0) + float(r["play_position"] or 0)
+    total = float(r["duration_s"] or 0)
+    return {
+        "chapter_idx": r["play_chapter"], "chapter_title": r["play_chapter_title"],
+        "position_s": r["play_position"], "listened_s": round(listened_s, 1),
+        "progress": round(min(1.0, listened_s / total), 4) if total > 0 else None,
+    }
+
+
 def _doc_out(r: dict[str, Any]) -> dict[str, Any]:
     out = {
         "id": str(r["id"]), "title": r["title"] or r.get("original_filename") or r.get("source_url") or "Untitled",
@@ -136,13 +160,20 @@ def _doc_out(r: dict[str, Any]) -> dict[str, Any]:
         }
         out["chapters_total"] = r["chapter_count"]
         out["chapters_ready"] = r["ready_count"]
-        out["playback"] = None if r["play_chapter"] is None else {
-            "chapter_idx": r["play_chapter"], "position_s": r["play_position"]}
+        out["playback"] = None if r["play_chapter"] is None else _playback_out(r)
         out["from_zotero"] = r["from_zotero"]
     return out
 
 
 KEYWORD_KINDS = ("task", "method", "dataset", "topic", "keyword")
+
+
+def library_year_bounds(conn) -> list[int] | None:
+    """First and last publication year of the whole library (not the filtered set), for the year slider."""
+    row = conn.execute(
+        "SELECT min(y) AS lo, max(y) AS hi FROM (SELECT substring(published from '[0-9]{4}')::int AS y "
+        "FROM documents WHERE published IS NOT NULL) t WHERE y IS NOT NULL").fetchone()
+    return None if row["lo"] is None else [row["lo"], row["hi"]]
 
 
 def _keywords_by_kind(rows) -> dict[str, list[str]]:
@@ -240,6 +271,7 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
             "listened": {str(k).lower(): v for k, v in count_by("d.listened").items()},
             "source": {**count_by("d.source_type"), "zotero": zotero_docs},
             "years": [{"year": int(y), "count": n} for y, n in sorted(count_by("substring(d.published from '[0-9]{4}')").items())],
+            "year_bounds": library_year_bounds(conn),
             "terms": by_kind,
         }
 

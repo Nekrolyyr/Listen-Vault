@@ -439,3 +439,31 @@ button.tile:hover { border-color: var(--accent); }
 .tl-title { text-align: left; border: 0; background: none; padding: 0; color: var(--text); font: inherit; cursor: pointer; }
 .tl-title:hover { color: var(--accent); }
 @media (max-width: 600px) { .timeline-list li { grid-template-columns: 1fr; gap: 2px; } }
+
+/* ---- continue listening, progress, year range ---- */
+.continue { margin-bottom: 20px; }
+.continue h2 { font-size: 15px; margin: 0 0 8px; }
+.continue-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.continue-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.continue-main { display: grid; gap: 6px; min-width: 0; }
+.continue-main .doc-title { overflow-wrap: anywhere; }
+.progress-line { display: grid; grid-template-columns: minmax(80px, 160px) minmax(0, 1fr); gap: 4px 10px; align-items: center; font-size: 13px; }
+.progress-line progress { height: 5px; }
+.progress-line .quiet { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.year-facet .year-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13.5px; }
+.year-value { font-variant-numeric: tabular-nums; }
+.year-slider { position: relative; height: 28px; margin: 0 8px; }
+.year-slider::before { content: ""; position: absolute; left: 0; right: 0; top: 12px; height: 4px; border-radius: 99px; background: var(--border); }
+.year-slider input[type="range"] {
+  position: absolute; left: -8px; right: -8px; top: 0; width: calc(100% + 16px); height: 28px; margin: 0;
+  background: none; pointer-events: none; -webkit-appearance: none; appearance: none;
+}
+.year-slider input[type="range"]::-webkit-slider-runnable-track { height: 4px; background: transparent; }
+.year-slider input[type="range"]::-moz-range-track { height: 4px; background: transparent; }
+.year-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; pointer-events: auto; width: 18px; height: 18px; margin-top: -7px; border-radius: 50%;
+  background: var(--accent); border: 2px solid var(--surface); cursor: pointer;
+}
+.year-slider input[type="range"]::-moz-range-thumb {
+  pointer-events: auto; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 2px solid var(--surface); cursor: pointer;
+}

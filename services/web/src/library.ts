@@ -1,5 +1,5 @@
 import { api, type Doc, type Facets, type Filters, type Graph, type GroupDoc, type Groups, NO_FILTERS, type TimelineItem } from "./api";
-import { authors, date, duration, h, icon, toast } from "./dom";
+import { authors, clock, date, duration, h, icon, toast } from "./dom";
 import { graphView } from "./graph";
 import { facetColumn } from "./facets";
 import { timelinePanel } from "./timeline";
@@ -218,6 +218,7 @@ export function libraryView(): View {
             ? h("a", { href: `/doc/${doc.id}`, "data-link": true, class: "chip link" }, `${doc.chapters_ready} chapters playable`)
             : null,
         ),
+        doc.playback && !doc.listened ? progressLine(doc) : null,
         newTerms.length
           ? h(
               "div",
@@ -249,7 +250,7 @@ export function libraryView(): View {
 
   function renderList(): HTMLElement {
     if (!docs.length) {
-      const hasFilter = query || filters.term.length || filters.year || filters.source || filters.listened !== null || filters.status;
+      const hasFilter = query || filters.term.length || filters.yearFrom !== null || filters.yearTo !== null || filters.source || filters.notZotero || filters.listened !== null || filters.status;
       return h("ul", { class: "doc-list" }, h("li", { class: "empty" }, hasFilter ? "Nothing matches these filters." : "Your library is empty. Add a PDF or paste a link above to get started."));
     }
     return h("ul", { class: "doc-list", "aria-live": "polite" }, ...docs.map(card));
@@ -335,11 +336,14 @@ export function libraryView(): View {
             ...f.years.map((y) =>
               h("button", {
                 type: "button",
-                class: `year-bar${filters.year === String(y.year) ? " on" : ""}`,
+                class: `year-bar${filters.yearFrom === y.year && filters.yearTo === y.year ? " on" : ""}`,
                 title: `${y.year}: ${y.count}`,
                 "aria-label": `${y.year}: ${y.count} papers`,
                 style: `height:${Math.max(8, (y.count / maxYear) * 100)}%`,
-                onclick: () => setFilters({ ...filters, year: filters.year === String(y.year) ? null : String(y.year) }),
+                onclick: () => {
+                  const on = filters.yearFrom === y.year && filters.yearTo === y.year;
+                  setFilters({ ...filters, yearFrom: on ? null : y.year, yearTo: on ? null : y.year });
+                },
               }),
             ),
             h("span", { class: "years-range" }, `${f.years[0].year}–${f.years[f.years.length - 1].year}`),
@@ -373,6 +377,8 @@ export function libraryView(): View {
   }
 
   function render(): void {
+    const cont = continueSection(docs);
+    continueSlot.replaceChildren(...(cont ? [cont] : []));
     dashSlot.replaceChildren(dashboard());
     facetSlot.replaceChildren(facetColumn(facets, filters, setFilters, filtersOpen, (o) => (filtersOpen = o)));
     headSlot.replaceChildren(resultsHead());
@@ -460,6 +466,7 @@ export function libraryView(): View {
     ),
   );
 
+  const continueSlot = h("div");
   const dashSlot = h("div");
   const facetSlot = h("div", { class: "facet-slot" });
   const headSlot = h("div");
@@ -469,6 +476,7 @@ export function libraryView(): View {
     { class: "library" },
     h("h1", { class: "visually-hidden" }, "Library"),
     h("div", { class: "add-panel" }, drop, urlForm, uploadList),
+    continueSlot,
     dashSlot,
     h(
       "div",
@@ -499,4 +507,49 @@ function localStore(key: string, value?: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** Where a paper was left off, with its progress through the whole paper. */
+function progressLine(doc: Doc): HTMLElement | null {
+  const p = doc.playback;
+  if (!p) return null;
+  const where = p.chapter_idx === 0 ? "overview" : p.chapter_title ?? `chapter ${p.chapter_idx}`;
+  if (p.progress === null) return h("p", { class: "doc-detail" }, `Continue at ${where}`);
+  const pct = Math.round(p.progress * 100);
+  return h(
+    "div",
+    { class: "progress-line" },
+    h("progress", { max: 1, value: p.progress, "aria-label": `Listened ${pct}%` }),
+    h("span", { class: "quiet" }, `Continue at ${where} · ${pct}% · ${clock(p.listened_s)} of ${clock(doc.duration_s ?? 0)}`),
+  );
+}
+
+/** Papers part-way through, most recently played first: the way back into what you are listening to. */
+function continueSection(docs: Doc[]): HTMLElement | null {
+  const inProgress = docs
+    .filter((d) => d.playback && !d.listened)
+    .sort((a, b) => (b.last_listened_at ?? "").localeCompare(a.last_listened_at ?? ""));
+  if (!inProgress.length) return null;
+  return h(
+    "section",
+    { class: "continue", "aria-label": "Continue listening" },
+    h("h2", {}, "Continue listening"),
+    h(
+      "ul",
+      { class: "continue-list" },
+      ...inProgress.slice(0, 8).map((d) =>
+        h(
+          "li",
+          { class: "continue-item" },
+          h(
+            "div",
+            { class: "continue-main" },
+            h("a", { href: `/doc/${d.id}`, "data-link": true, class: "doc-title" }, d.title),
+            progressLine(d),
+          ),
+          h("a", { href: `/doc/${d.id}`, "data-link": true, class: "btn small primary" }, "Resume"),
+        ),
+      ),
+    ),
+  );
 }

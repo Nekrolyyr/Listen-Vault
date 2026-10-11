@@ -99,6 +99,71 @@ function termFacet(title: string, values: { term: string; count: number }[], f: 
 }
 
 /** The filter column. On phones it is a disclosure, closed unless `open`; on wide screens it is always open. */
+/** Exclude papers imported from Zotero (independent of the Source choice above). */
+function zoteroToggle(f: Filters, set: (patch: Partial<Filters>) => void): HTMLElement {
+  return h(
+    "fieldset",
+    { class: "facet" },
+    h("legend", {}, "Zotero"),
+    h(
+      "label",
+      { class: "facet-row" },
+      h("input", {
+        type: "checkbox",
+        checked: f.notZotero,
+        onchange: (e: Event) => set({ notZotero: (e.target as HTMLInputElement).checked }),
+      }),
+      h("span", { class: "facet-label" }, "Exclude Zotero items"),
+    ),
+  );
+}
+
+/** Publication years as a range: two handles on one track. The filter changes when a handle is released; the
+ *  whole library range means no filter. */
+function yearSlider(
+  bounds: [number, number] | null,
+  f: Filters,
+  onChange: (from: number | null, to: number | null) => void,
+): HTMLElement | null {
+  if (!bounds || bounds[0] === bounds[1]) return null;
+  const [lo, hi] = bounds;
+  const value = h("span", { class: "year-value", "aria-live": "polite" });
+  const low = h("input", { type: "range", min: lo, max: hi, step: 1, value: f.yearFrom ?? lo, "aria-label": "First year" }) as HTMLInputElement;
+  const high = h("input", { type: "range", min: lo, max: hi, step: 1, value: f.yearTo ?? hi, "aria-label": "Last year" }) as HTMLInputElement;
+  const range = (): [number, number] => {
+    const a = Number(low.value);
+    const b = Number(high.value);
+    return [Math.min(a, b), Math.max(a, b)];
+  };
+  const show = () => {
+    const [a, b] = range();
+    value.textContent = a === b ? String(a) : `${a}–${b}`;
+  };
+  const commit = () => {
+    const [a, b] = range();
+    const whole = a <= lo && b >= hi;
+    onChange(whole ? null : a, whole ? null : b);
+  };
+  low.addEventListener("input", show);
+  high.addEventListener("input", show);
+  low.addEventListener("change", commit);
+  high.addEventListener("change", commit);
+  show();
+  const yearActive = f.yearFrom !== null || f.yearTo !== null;
+  return h(
+    "fieldset",
+    { class: "facet year-facet" },
+    h("legend", {}, "Year"),
+    h(
+      "div",
+      { class: "year-head" },
+      value,
+      yearActive ? h("button", { type: "button", class: "facet-clear", onclick: () => onChange(null, null) }, "Any year") : null,
+    ),
+    h("div", { class: "year-slider" }, low, high),
+  );
+}
+
 export function facetColumn(
   facets: Facets | null,
   f: Filters,
@@ -107,8 +172,9 @@ export function facetColumn(
   onToggle: (open: boolean) => void,
 ): HTMLElement {
   const set = (patch: Partial<Filters>) => onChange({ ...f, ...patch });
-  const active = f.term.length > 0 || f.year !== null || f.source !== null || f.listened !== null || f.status !== null;
-  const activeCount = f.term.length + [f.year, f.source, f.listened, f.status].filter((v) => v !== null).length;
+  const yearActive = f.yearFrom !== null || f.yearTo !== null;
+  const active = f.term.length > 0 || yearActive || f.source !== null || f.notZotero || f.listened !== null || f.status !== null;
+  const activeCount = f.term.length + [yearActive, f.source, f.notZotero, f.listened, f.status].filter(Boolean).length;
   const wide = window.matchMedia("(min-width: 861px)").matches;
   const children: (HTMLElement | null)[] = [
     h(
@@ -135,13 +201,15 @@ export function facetColumn(
     return root(h("p", { class: "pane-message" }, "Loading…"));
   }
   const s = facets.source;
-  children.push(
-    radioGroup<Filters["source"]>("facet-source", "Source", [
+  const sourceGroup = radioGroup<Filters["source"]>("facet-source", "Source", [
       { value: null, label: "All", count: facets.total },
       { value: "pdf", label: "Papers", count: s.pdf },
       { value: "url", label: "Articles", count: s.url },
       { value: "zotero", label: "From Zotero", count: s.zotero },
-    ], f.source, (v) => set({ source: v })),
+    ], f.source, (v) => set({ source: v }));
+  children.push(
+    sourceGroup,
+    zoteroToggle(f, set),
     radioGroup<Filters["listened"]>("facet-listened", "Listened", [
       { value: null, label: "All" },
       { value: true, label: "Listened", count: facets.listened.true ?? 0 },
@@ -157,15 +225,8 @@ export function facetColumn(
       (v) => set({ status: v }),
     ),
   );
-  const years = [...facets.years].reverse();
-  if (years.length) {
-    children.push(
-      radioGroup<string | null>("facet-year", "Year", [
-        { value: null, label: "Any year" },
-        ...years.map((y) => ({ value: String(y.year), label: String(y.year), count: y.count })),
-      ], f.year, (v) => set({ year: v })),
-    );
-  }
+  const slider = yearSlider(facets.year_bounds, f, (from, to) => set({ yearFrom: from, yearTo: to }));
+  if (slider) children.push(slider);
   for (const [kind, title] of TERM_KINDS) {
     const values = facets.terms[kind] ?? [];
     if (values.length) {

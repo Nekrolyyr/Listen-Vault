@@ -31,21 +31,34 @@ export interface Doc {
   job: Job | null;
   chapters_total: number;
   chapters_ready: number;
-  playback: { chapter_idx: number; position_s: number } | null;
+  playback: ListedPlayback | null;
   abstract: string | null;
   top_terms?: string[];
+}
+
+/** Where a paper was left off, as the library list shows it. progress is the share of the whole paper. */
+export interface ListedPlayback {
+  chapter_idx: number;
+  chapter_title: string | null;
+  position_s: number;
+  listened_s: number;
+  progress: number | null;
 }
 
 /** Library filters. Terms must all match; the other filters narrow the same way. */
 export interface Filters {
   term: string[];
-  year: string | null;
+  yearFrom: number | null;
+  yearTo: number | null;
   source: "pdf" | "url" | "zotero" | null;
+  notZotero: boolean;
   listened: boolean | null;
   status: Doc["status"] | null;
 }
 
-export const NO_FILTERS: Filters = { term: [], year: null, source: null, listened: null, status: null };
+export const NO_FILTERS: Filters = {
+  term: [], yearFrom: null, yearTo: null, source: null, notZotero: false, listened: null, status: null,
+};
 
 export interface Facets {
   total: number;
@@ -55,6 +68,7 @@ export interface Facets {
   listened: Record<"true" | "false", number>;
   source: Record<"pdf" | "url" | "zotero", number>;
   years: { year: number; count: number }[];
+  year_bounds: [number, number] | null; // the whole library, so the slider does not move with the filters
   terms: Record<KeywordKind, { term: string; count: number }[]>;
 }
 
@@ -200,7 +214,9 @@ const WRITE_HEADERS = { "X-Requested-With": "listen-vault" };
 export function filterQuery(f: Filters): string {
   const p = new URLSearchParams();
   for (const t of f.term) p.append("term", t);
-  if (f.year) p.set("year", f.year);
+  if (f.yearFrom !== null) p.set("year_from", String(f.yearFrom));
+  if (f.yearTo !== null) p.set("year_to", String(f.yearTo));
+  if (f.notZotero) p.set("not_zotero", "true");
   if (f.source) p.set("source", f.source);
   if (f.listened !== null) p.set("listened", String(f.listened));
   if (f.status) p.set("status", f.status);
