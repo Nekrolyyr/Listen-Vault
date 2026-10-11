@@ -49,14 +49,17 @@ export function readerView(id: string): View {
     qaSubmit,
   );
   const qaBox = h("section", { class: "qa" }, h("h2", {}, "Ask about this paper"), qaForm, qaList);
-  const sidePane = h("aside", { class: "side-pane", "aria-label": "Chapters" }, nowReading, chapterList, qaBox);
+  // Splitters: drag to resize the document and the side panel, and the chapters and the question box.
+  const splitV = splitter("v", "Resize the side panel");
+  const splitH = splitter("h", "Resize the question box");
+  const sidePane = h("aside", { class: "side-pane", "aria-label": "Chapters" }, nowReading, chapterList, splitH, qaBox);
   const tabs = h(
     "div",
     { class: "pane-tabs", role: "tablist" },
     h("button", { type: "button", role: "tab", "aria-selected": "true", onclick: () => showTab("doc") }, "Document"),
     h("button", { type: "button", role: "tab", "aria-selected": "false", onclick: () => showTab("chapters") }, "Chapters"),
   );
-  const body = h("div", { class: "reader-body tab-doc" }, docPane, sidePane);
+  const body = h("div", { class: "reader-body tab-doc" }, docPane, splitV, sidePane);
 
   // ---------------------------------------------------------------- player bar
   const playBtn = h("button", { type: "button", class: "play", "aria-label": "Play", onclick: () => player?.toggle() }, icon("play"));
@@ -353,6 +356,81 @@ export function readerView(id: string): View {
   };
   document.addEventListener("keydown", onKey);
 
+  // ---------------------------------------------------------------- splitter behaviour
+  const SIDE_KEY = "lv.sideWidth";
+  const QA_KEY = "lv.qaHeight";
+  const SIDE_DEFAULT = 380;
+  const QA_DEFAULT = 300;
+  const SIDE_MIN = 280;
+  const DOC_MIN = 360;
+  const QA_MIN = 140;
+  const CHAPTERS_MIN = 90;
+
+  function setSideWidth(px: number, save = true): void {
+    const width = Math.round(Math.min(Math.max(px, SIDE_MIN), Math.max(SIDE_MIN, body.clientWidth - DOC_MIN)));
+    body.style.setProperty("--side-w", `${width}px`);
+    if (save) storeNumber(SIDE_KEY, width);
+  }
+
+  function setQaHeight(px: number, save = true): void {
+    const height = Math.round(Math.min(Math.max(px, QA_MIN), Math.max(QA_MIN, sidePane.clientHeight - CHAPTERS_MIN)));
+    sidePane.style.setProperty("--qa-h", `${height}px`);
+    if (save) storeNumber(QA_KEY, height);
+  }
+
+  /** Pointer drag on a splitter; the callback gets the pointer position in the pane's coordinates. */
+  function dragging(handle: HTMLElement, onMove: (e: PointerEvent) => void): void {
+    handle.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      handle.setPointerCapture(e.pointerId);
+      handle.classList.add("dragging");
+      document.body.classList.add("is-dragging");
+      const move = (ev: PointerEvent) => onMove(ev);
+      const up = () => {
+        handle.classList.remove("dragging");
+        document.body.classList.remove("is-dragging");
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", up);
+        handle.removeEventListener("pointercancel", up);
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", up);
+      handle.addEventListener("pointercancel", up);
+    });
+  }
+
+  dragging(splitV, (e) => setSideWidth(body.getBoundingClientRect().right - e.clientX));
+  dragging(splitH, (e) => setQaHeight(sidePane.getBoundingClientRect().bottom - e.clientY));
+  // keyboard: arrows move the splitter, double-click or Home resets it
+  splitV.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      setSideWidth(sideWidth() + (e.key === "ArrowLeft" ? 24 : -24));
+    }
+  });
+  splitH.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      e.preventDefault();
+      setQaHeight(qaHeight() + (e.key === "ArrowUp" ? 24 : -24));
+    }
+  });
+  splitV.addEventListener("dblclick", () => setSideWidth(SIDE_DEFAULT));
+  splitH.addEventListener("dblclick", () => setQaHeight(QA_DEFAULT));
+  splitV.addEventListener("keydown", (e) => e.key === "Home" && setSideWidth(SIDE_DEFAULT));
+  splitH.addEventListener("keydown", (e) => e.key === "Home" && setQaHeight(QA_DEFAULT));
+
+  const sideWidth = () => sidePane.getBoundingClientRect().width;
+  const qaHeight = () => qaBox.getBoundingClientRect().height;
+  setSideWidth(storedNumber(SIDE_KEY) ?? SIDE_DEFAULT, false);
+  setQaHeight(storedNumber(QA_KEY) ?? QA_DEFAULT, false);
+  // keep the panes inside the window when it is resized
+  const onWindowResize = () => {
+    setSideWidth(sideWidth(), false);
+    setQaHeight(qaHeight(), false);
+  };
+  window.addEventListener("resize", onWindowResize);
+
   const el = h("section", { class: "reader" }, head, keywordBar, tabs, body, bar);
   refresh(true);
   return {
@@ -360,6 +438,7 @@ export function readerView(id: string): View {
     title: "Reader",
     destroy: () => {
       destroyed = true;
+      window.removeEventListener("resize", onWindowResize);
       window.clearTimeout(poll);
       window.clearTimeout(qaTimer);
       document.removeEventListener("keydown", onKey);
@@ -367,4 +446,32 @@ export function readerView(id: string): View {
       pdf?.destroy();
     },
   };
+}
+
+function splitter(orientation: "v" | "h", label: string): HTMLElement {
+  return h("div", {
+    class: `splitter ${orientation}`,
+    role: "separator",
+    "aria-orientation": orientation === "v" ? "vertical" : "horizontal",
+    "aria-label": label,
+    title: "Drag to resize. Double-click to reset.",
+    tabindex: 0,
+  });
+}
+
+function storedNumber(key: string): number | null {
+  try {
+    const v = Number(localStorage.getItem(key));
+    return v > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeNumber(key: string, value: number): void {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {
+    /* ignore */
+  }
 }

@@ -1,5 +1,6 @@
 // PDF.js viewer that follows playback: it scrolls so the sentence being read sits in the upper part of the
 // viewport and highlights it. Scrolls caused by the app are told apart from scrolls by the reader.
+// Zoom: "fit page" and "fit width" stay in effect while the window is resized; fixed levels do not.
 import * as pdfjs from "pdfjs-dist";
 import { EventBus, PDFLinkService, PDFViewer } from "pdfjs-dist/web/pdf_viewer.mjs";
 import "pdfjs-dist/web/pdf_viewer.css";
@@ -17,8 +18,32 @@ interface PageView {
   scale: number;
 }
 
+export type ZoomMode = "page-fit" | "page-width" | number;
+
 const PROGRAMMATIC_MS = 900; // smooth scrolls by the app last about this long
 const VIEWPORT_ANCHOR = 0.3; // fraction of the viewport height above the sentence
+const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
+const ZOOM_KEY = "lv.zoom";
+const PHONE = "(max-width: 900px)";
+
+function loadZoom(): ZoomMode {
+  try {
+    const v = localStorage.getItem(ZOOM_KEY);
+    if (v === "page-fit" || v === "page-width") return v;
+    if (v && Number(v) > 0) return Number(v);
+  } catch {
+    /* storage unavailable: use the default */
+  }
+  return window.matchMedia(PHONE).matches ? "page-width" : "page-fit";
+}
+
+function saveZoom(zoom: ZoomMode): void {
+  try {
+    localStorage.setItem(ZOOM_KEY, String(zoom));
+  } catch {
+    /* ignore */
+  }
+}
 
 export class PdfView {
   readonly el: HTMLElement;
@@ -30,19 +55,48 @@ export class PdfView {
   private highlight: Rect[] = [];
   private programmaticUntil = 0;
   private loading: ReturnType<typeof pdfjs.getDocument> | null = null;
+  private zoom: ZoomMode;
+  private zoomSelect: HTMLSelectElement;
+  private zoomLabel: HTMLElement;
+  private resizePending = false;
   private resize = new ResizeObserver(() => {
-    if (this.ready) this.viewer.currentScaleValue = "page-width";
+    // fit modes follow the window; coalesce the many resize notifications of one drag into one redraw
+    if (!this.ready || typeof this.zoom === "number" || this.resizePending) return;
+    this.resizePending = true;
+    requestAnimationFrame(() => {
+      this.resizePending = false;
+      this.applyZoom();
+    });
   });
 
   constructor(url: string, private onUserScroll: () => void) {
+    this.zoom = loadZoom();
     this.container = h("div", { class: "pdf-container", tabindex: 0, "aria-label": "PDF document" }, h("div", { class: "pdfViewer" }));
-    this.el = h("div", { class: "pdf-pane" }, this.container);
+
+    this.zoomSelect = h(
+      "select",
+      { class: "zoom-select", "aria-label": "Zoom", onchange: (e: Event) => this.pickZoom((e.target as HTMLSelectElement).value) },
+      h("option", { value: "page-fit" }, "Fit page"),
+      h("option", { value: "page-width" }, "Fit width"),
+      ...ZOOM_LEVELS.map((z) => h("option", { value: String(z) }, `${Math.round(z * 100)}%`)),
+    ) as HTMLSelectElement;
+    this.zoomLabel = h("span", { class: "zoom-label", "aria-live": "polite" });
+    const toolbar = h(
+      "div",
+      { class: "pdf-toolbar", role: "toolbar", "aria-label": "PDF zoom" },
+      h("button", { type: "button", "aria-label": "Zoom out", title: "Zoom out", onclick: () => this.step(-1) }, "−"),
+      this.zoomSelect,
+      h("button", { type: "button", "aria-label": "Zoom in", title: "Zoom in", onclick: () => this.step(1) }, "+"),
+      this.zoomLabel,
+    );
+    this.el = h("div", { class: "pdf-pane" }, toolbar, this.container);
+
     const links = new PDFLinkService({ eventBus: this.bus });
     this.viewer = new PDFViewer({ container: this.container, eventBus: this.bus, linkService: links, removePageBorders: true });
     links.setViewer(this.viewer);
     this.bus.on("pagesinit", () => {
       this.ready = true;
-      this.viewer.currentScaleValue = "page-width";
+      this.applyZoom();
       if (this.pendingPage) this.showPage(this.pendingPage);
     });
     // A page is re-rendered on zoom or when scrolled into view: paint the highlight onto it again.
@@ -56,6 +110,12 @@ export class PdfView {
     for (const ev of ["wheel", "touchmove", "keydown"]) {
       this.container.addEventListener(ev, () => this.onUserScroll(), { passive: true });
     }
+    // Ctrl (or ⌘) + wheel zooms the document instead of the page.
+    this.container.addEventListener("wheel", (e) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      this.step(e.deltaY < 0 ? 1 : -1);
+    }, { passive: false });
 
     this.loading = pdfjs.getDocument({ url, withCredentials: true });
     this.loading.promise.then(
@@ -65,7 +125,8 @@ export class PdfView {
       },
       (err) => this.el.replaceChildren(h("p", { class: "pane-message" }, `The PDF could not be shown: ${err.message ?? err}`)),
     );
-    this.resize.observe(this.el);
+    this.resize.observe(this.container);
+    this.updateZoomControls();
   }
 
   /** Scroll to a page's top, for chapter starts and citations. */
@@ -99,6 +160,43 @@ export class PdfView {
     const target = pageTop + y * pv.scale - this.container.clientHeight * VIEWPORT_ANCHOR;
     this.programmaticUntil = performance.now() + PROGRAMMATIC_MS;
     this.container.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
+  }
+
+  /** Set the zoom: "page-fit", "page-width" or a scale (1 = 100%). */
+  setZoom(zoom: ZoomMode): void {
+    this.zoom = zoom;
+    saveZoom(zoom);
+    this.applyZoom();
+  }
+
+  private pickZoom(value: string): void {
+    this.setZoom(value === "page-fit" || value === "page-width" ? value : Number(value));
+  }
+
+  /** One zoom level in (dir > 0) or out (dir < 0). */
+  private step(dir: number): void {
+    const current = typeof this.zoom === "number" ? this.zoom : this.viewer.currentScale || 1;
+    const next = dir > 0
+      ? ZOOM_LEVELS.find((z) => z > current + 0.01)
+      : [...ZOOM_LEVELS].reverse().find((z) => z < current - 0.01);
+    if (next !== undefined) this.setZoom(next);
+  }
+
+  private applyZoom(): void {
+    if (!this.ready) return;
+    if (typeof this.zoom === "number") this.viewer.currentScale = this.zoom;
+    else this.viewer.currentScaleValue = this.zoom;
+    this.updateZoomControls();
+  }
+
+  private updateZoomControls(): void {
+    const value = typeof this.zoom === "number" ? String(this.zoom) : this.zoom;
+    if (![...this.zoomSelect.options].some((o) => o.value === value)) {
+      this.zoomSelect.append(h("option", { value }, "Custom"));
+    }
+    this.zoomSelect.value = value;
+    const percent = this.ready && this.viewer.currentScale ? Math.round(this.viewer.currentScale * 100) : null;
+    this.zoomLabel.textContent = percent === null ? "" : `${percent}%`;
   }
 
   private pageView(pageNo: number): PageView | undefined {
