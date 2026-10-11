@@ -20,8 +20,7 @@ totp:
 
 webauthn:
   disable: false
-  # Passwordless sign-in with a passkey. With the two_factor policy below, Authelia asks for the
-  # password as well after the passkey; switch the rule to one_factor for passkey-only login.
+  # Passwordless sign-in with a passkey. The one_factor policy below lets the passkey alone open the app.
   enable_passkey_login: true
   display_name: Listen Vault
   attestation_conveyance_preference: indirect
@@ -43,7 +42,7 @@ access_control:
   default_policy: deny
   rules:
     - domain: listen.vault.akiba-z.ch
-      policy: two_factor
+      policy: one_factor
 
 session:
   name: listen_session
