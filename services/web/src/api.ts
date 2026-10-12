@@ -189,6 +189,7 @@ export interface Settings {
     voice: string;
     speech_speed: number;
     citations: "remove" | "speak";
+    reading_wpm: number;
   };
   voices: string[];
   engines: string[];

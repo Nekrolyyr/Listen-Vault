@@ -52,10 +52,19 @@ export class Player {
   private wantPlaying = false;
   private keepAlive: HTMLAudioElement | null = null;
   rate = 1;
+  // Speed reading uses the same position but no sound: the audio stays paused and out of the media controls.
+  private reading = false;
+  // A resume position that the audio has not reached yet (metadata still loading). audio.currentTime reads 0 then.
+  private pendingSeek: number | null = null;
 
   constructor(public doc: DocDetail, private events: PlayerEvents) {
     this.audio.preload = "auto";
     this.audio.addEventListener("timeupdate", () => this.tick());
+    // the resume position counts until the audio has actually moved there (or started playing)
+    this.audio.addEventListener("seeked", () => {
+      // some sources clamp the seek to 0: only a seek that landed where it was asked clears the pending position
+      if (this.pendingSeek !== null && Math.abs(this.audio.currentTime - this.pendingSeek) < 1) this.pendingSeek = null;
+    });
     this.audio.addEventListener("play", () => {
       this.syncPlaybackState();
       this.events.onState();
@@ -77,6 +86,11 @@ export class Player {
     return this.waitingFor !== null ? this.wantPlaying : !this.audio.paused;
   }
 
+  /** Where playback is, in seconds, including a resume position the audio has not reached yet. */
+  get time(): number {
+    return this.pendingSeek ?? (this.audio.currentTime || 0);
+  }
+
   get chapter(): Chapter | undefined {
     return this.doc.chapters.find((c) => c.idx === this.chapterIdx);
   }
@@ -92,9 +106,18 @@ export class Player {
     }
   }
 
+  /** Speed reading takes over the position: audio stays paused, and the media controls show nothing. */
+  setReading(on: boolean): void {
+    this.reading = on;
+    if (on) this.pause();
+    this.syncPlaybackState();
+    this.events.onState();
+  }
+
   async load(idx: number, position = 0, autoplay = false): Promise<void> {
     const chapter = this.doc.chapters.find((c) => c.idx === idx);
     if (!chapter) return;
+    if (this.reading) autoplay = false;
     if (autoplay) this.wantPlaying = true;
     if (!chapter.ready) {
       this.waitingFor = idx;
@@ -132,6 +155,7 @@ export class Player {
       });
     }
     if (changed) this.events.onChapter(idx);
+    this.pendingSeek = position > 0 ? position : null;
     if (position > 0) {
       const seek = () => (this.audio.currentTime = position);
       if (this.audio.readyState >= 1) seek();
@@ -144,6 +168,7 @@ export class Player {
   }
 
   async play(): Promise<void> {
+    if (this.reading) return;
     if (this.chapterIdx < 0) {
       await this.load(this.doc.chapters[0]?.idx ?? 0, 0, true);
       return;
@@ -190,6 +215,7 @@ export class Player {
 
   seekTo(seconds: number): void {
     if (this.waitingFor !== null) return;
+    this.pendingSeek = seconds;
     this.audio.currentTime = seconds;
   }
 
@@ -221,6 +247,7 @@ export class Player {
   }
 
   private tick(force = false): void {
+    if (!this.audio.paused) this.pendingSeek = null;
     const t = this.audio.currentTime;
     const list = this.sentences;
     let i = this.sentenceIdx;
@@ -256,7 +283,7 @@ export class Player {
     if (this.chapterIdx < 0 || this.waitingFor !== null) return;
     this.lastSave = Date.now();
     api
-      .savePlayback(this.doc.id, { chapter_idx: this.chapterIdx, position_s: this.audio.currentTime || 0, rate: this.rate }, keepalive)
+      .savePlayback(this.doc.id, { chapter_idx: this.chapterIdx, position_s: this.time, rate: this.rate }, keepalive)
       .catch(() => {
         /* best effort */
       });
@@ -296,7 +323,7 @@ export class Player {
 
   /** The notification's play/pause button follows this; Android hides the controls when it is unset. */
   private syncPlaybackState(): void {
-    if ("mediaSession" in navigator) navigator.mediaSession.playbackState = this.playing ? "playing" : "paused";
+    if ("mediaSession" in navigator) navigator.mediaSession.playbackState = this.reading ? "none" : this.playing ? "playing" : "paused";
   }
 
   private updateMetadata(): void {

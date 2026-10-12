@@ -519,7 +519,7 @@ function progressLine(doc: Doc): HTMLElement | null {
   return h(
     "div",
     { class: "progress-line" },
-    h("progress", { max: 1, value: p.progress, "aria-label": `Listened ${pct}%` }),
+    h("progress", { max: 1, value: p.progress, "aria-label": `Progress ${pct}%` }),
     h("span", { class: "quiet" }, `Continue at ${where} · ${pct}% · ${clock(p.listened_s)} of ${clock(doc.duration_s ?? 0)}`),
   );
 }

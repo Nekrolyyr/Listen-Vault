@@ -1,6 +1,7 @@
 import { api, type Settings } from "./api";
 import { h, toast } from "./dom";
 import type { View } from "./main";
+import { WPM_MAX, WPM_MIN } from "./speedread";
 
 const ACCENTS: Record<string, string> = {
   af: "American English · female",
@@ -38,6 +39,9 @@ export function settingsView(): View {
     const speed = h("input", { type: "range", name: "speech_speed", min: 0.8, max: 1.3, step: 0.05, value: v.speech_speed }) as HTMLInputElement;
     const speedOut = h("output", {}, `${v.speech_speed.toFixed(2)}×`);
     speed.addEventListener("input", () => (speedOut.textContent = `${Number(speed.value).toFixed(2)}×`));
+    const wpm = h("input", { type: "range", name: "reading_wpm", min: WPM_MIN, max: WPM_MAX, step: 10, value: v.reading_wpm }) as HTMLInputElement;
+    const wpmOut = h("output", {}, `${v.reading_wpm} wpm`);
+    wpm.addEventListener("input", () => (wpmOut.textContent = `${wpm.value} wpm`));
 
     form.replaceChildren(
       h(
@@ -69,6 +73,8 @@ export function settingsView(): View {
             h("option", { value: "speak", selected: v.citations === "speak" }, "Read them aloud"),
           ),
         ),
+        h("label", { class: "field" }, h("span", {}, "Speed reading, words per minute"), h("span", { class: "range" }, wpm, wpmOut)),
+        h("p", { class: "hint" }, "Speed reading shows one word at a time. It starts slower and reaches this speed after about 15 seconds."),
       ),
       h(
         "fieldset",
@@ -91,6 +97,7 @@ export function settingsView(): View {
         voice: String(data.get("voice")),
         speech_speed: Number(data.get("speech_speed")),
         citations: data.get("citations") as Settings["values"]["citations"],
+        reading_wpm: Number(data.get("reading_wpm")),
       });
       render(saved);
       toast("Settings saved");

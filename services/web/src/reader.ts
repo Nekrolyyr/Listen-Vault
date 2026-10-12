@@ -3,8 +3,12 @@ import { authors, clock, duration, h, icon, toast } from "./dom";
 import type { View } from "./main";
 import { PdfView } from "./pdfview";
 import { Player } from "./player";
+import { WPM_DEFAULT, WPM_MAX, WPM_MIN, clampWpm, sentenceIndexAt } from "./speedread";
+import { SpeedView } from "./speedview";
 
 const RATES = [0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
+const MODE_KEY = "lv.readMode";
+const SAVE_EVERY_MS = 10_000;
 
 export function readerView(id: string): View {
   let doc: DocDetail | null = null;
@@ -15,6 +19,13 @@ export function readerView(id: string): View {
   let poll = 0;
   let destroyed = false;
   let currentSentence: Sentence | null = null;
+  // "read" is remembered per viewer; the mode is only "read" while the reading stage is on screen
+  let mode: "listen" | "read" = storedValue(MODE_KEY) === "read" ? "read" : "listen";
+  // where in the chapter speed reading starts, once that chapter's sentences have arrived
+  let pendingTime: number | null = null;
+  let wpm = WPM_DEFAULT;
+  let lastSave = 0;
+  let sentenceDragging = false;
 
   const head = h("div", { class: "reader-head" });
   const keywordBar = h("div", { class: "keyword-bar", "aria-label": "Keywords" });
@@ -60,6 +71,7 @@ export function readerView(id: string): View {
     h("button", { type: "button", role: "tab", "aria-selected": "false", onclick: () => showTab("chapters") }, "Chapters"),
   );
   const body = h("div", { class: "reader-body tab-doc" }, docPane, splitV, sidePane);
+  const tabButtons = tabs.querySelectorAll("button");
 
   // ---------------------------------------------------------------- player bar
   const playBtn = h("button", { type: "button", class: "play", "aria-label": "Play", onclick: () => player?.toggle() }, icon("play"));
@@ -78,6 +90,20 @@ export function readerView(id: string): View {
     { type: "button", class: "icon-btn follow on", "aria-pressed": "true", title: "Follow playback in the document", onclick: () => setFollow(!follow) },
     icon("follow"),
     h("span", { class: "label" }, "Follow"),
+  );
+  // Listen | Read: the same position, read aloud or one word at a time (the read controls replace the audio controls)
+  const listenBtn = h("button", { type: "button", "aria-pressed": "true", onclick: () => setMode("listen") }, "Listen");
+  const readBtn = h("button", { type: "button", "aria-pressed": "false", onclick: () => setMode("read") }, "Read");
+  const modeSwitch = h("div", { class: "mode-switch", role: "group", "aria-label": "Listen or speed read" }, listenBtn, readBtn);
+  const sentenceSeek = h("input", { type: "range", min: 0, max: 1, step: 1, value: 0, "aria-label": "Sentence" }) as HTMLInputElement;
+  const sentenceNow = h("span", { class: "time" }, "0 / 0");
+  const wpmSeek = h("input", { type: "range", min: WPM_MIN, max: WPM_MAX, step: 10, value: WPM_DEFAULT, "aria-label": "Words per minute" }) as HTMLInputElement;
+  const wpmNow = h("span", { class: "time" }, `${WPM_DEFAULT} wpm`);
+  const readBar = h(
+    "div",
+    { class: "read-bar" },
+    h("div", { class: "bar-seek" }, sentenceNow, sentenceSeek),
+    h("div", { class: "bar-seek" }, wpmNow, wpmSeek),
   );
   let seeking = false;
   seek.addEventListener("input", () => {
@@ -102,13 +128,144 @@ export function readerView(id: string): View {
       h("button", { type: "button", class: "icon-btn", "aria-label": "Next chapter", onclick: () => player?.next() }, icon("next")),
     ),
     h("div", { class: "bar-seek" }, timeNow, seek, timeEnd),
-    h("div", { class: "bar-extra" }, rateSelect, followBtn),
+    readBar,
+    h("div", { class: "bar-extra" }, modeSwitch, rateSelect, followBtn),
   );
 
+  sentenceSeek.addEventListener("input", () => {
+    sentenceDragging = true;
+    speed.preview(Number(sentenceSeek.value));
+  });
+  sentenceSeek.addEventListener("change", () => {
+    sentenceDragging = false;
+    jumpTo(Number(sentenceSeek.value));
+  });
+  wpmSeek.addEventListener("input", () => setWpm(Number(wpmSeek.value), false));
+  wpmSeek.addEventListener("change", () => setWpm(Number(wpmSeek.value), true));
+
+  // Speed reading: one word at a time. It keeps the audio position in step with the sentence it shows.
+  const speed = new SpeedView({
+    onIndex: (i) => {
+      const s = player?.sentences[i];
+      if (!s) return;
+      player?.seekTo(s.start);
+      if (!sentenceDragging) syncSentenceBar();
+      nowReading.replaceChildren(h("p", {}, h("span", { class: "label" }, "Now reading"), s.text));
+      if (Date.now() - lastSave > SAVE_EVERY_MS) saveNow();
+    },
+    onStop: () => {
+      syncSentenceBar();
+      saveNow();
+    },
+    nextChapter: () => {
+      const cur = player?.chapterIdx ?? -1;
+      const next = doc?.chapters.filter((c) => c.idx > cur).sort((a, b) => a.idx - b.idx)[0];
+      if (!player || !next) return false;
+      if (!next.ready) {
+        toast("The next chapter is still being generated.");
+        return false;
+      }
+      void player.load(next.idx, 0, false);
+      return true;
+    },
+  });
+
   function showTab(tab: "doc" | "chapters"): void {
+    // the reading stage is hidden on the Chapters tab, so reading pauses there
+    if (tab === "chapters") speed.stop();
     body.classList.toggle("tab-doc", tab === "doc");
     body.classList.toggle("tab-chapters", tab === "chapters");
-    tabs.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-selected", String((i === 0) === (tab === "doc"))));
+    tabButtons.forEach((b, i) => b.setAttribute("aria-selected", String((i === 0) === (tab === "doc"))));
+  }
+
+  function saveNow(): void {
+    lastSave = Date.now();
+    player?.save();
+  }
+
+  function chapterTitle(): string {
+    return doc?.chapters.find((c) => c.idx === player?.chapterIdx)?.title ?? "";
+  }
+
+  function syncSentenceBar(): void {
+    const { index, count } = speed.position;
+    sentenceSeek.max = String(Math.max(0, count - 1));
+    sentenceSeek.value = String(index);
+    sentenceNow.textContent = count ? `${index + 1} / ${count}` : "0 / 0";
+  }
+
+  /** A jump is saved at once, like a seek in the audio. Reading saves every few seconds instead. */
+  function jumpTo(index: number): void {
+    speed.seek(index);
+    saveNow();
+  }
+
+  function stepSentence(delta: number): void {
+    const { index, count } = speed.position;
+    if (count) jumpTo(Math.min(count - 1, Math.max(0, index + delta)));
+  }
+
+  function setWpm(value: number, persist: boolean): void {
+    wpm = clampWpm(value);
+    speed.setWpm(wpm);
+    wpmSeek.value = String(wpm);
+    wpmNow.textContent = `${wpm} wpm`;
+    if (persist) api.saveSettings({ reading_wpm: wpm }).catch((err) => toast((err as Error).message, "error"));
+  }
+
+  function setMode(next: "listen" | "read"): void {
+    if (next === mode || !player) return;
+    if (next === "read") {
+      if (!enterRead(player.time)) return;
+    } else exitRead();
+    storeValue(MODE_KEY, mode);
+  }
+
+  /** Starts speed reading at `time` (seconds into the chapter). False when the chapter is not ready yet. */
+  function enterRead(time: number, quiet = false): boolean {
+    const ready = doc?.chapters.find((c) => c.idx === player?.chapterIdx)?.ready;
+    if (!player || !ready) {
+      if (!quiet) toast("This chapter is still being generated. Speed reading starts when it is ready.");
+      return false;
+    }
+    player.setReading(true);
+    mode = "read";
+    pendingTime = time;
+    showMode();
+    if (player.sentences.length) syncSpeed();
+    else speed.setChapter([], 0, chapterTitle());
+    return true;
+  }
+
+  function exitRead(): void {
+    const s = player?.sentences[speed.position.index];
+    if (player && s) player.seekTo(s.start); // the audio resumes at the sentence being read
+    speed.stop();
+    mode = "listen";
+    player?.setReading(false);
+    saveNow();
+    showMode();
+  }
+
+  /** Gives the reading stage the sentences of the current chapter, starting where the listener was. */
+  function syncSpeed(): void {
+    const list = player?.sentences ?? [];
+    const index = Math.max(0, sentenceIndexAt(list, pendingTime ?? 0));
+    pendingTime = null;
+    speed.setMessage(null);
+    speed.setChapter(list, index, chapterTitle());
+    syncSentenceBar();
+  }
+
+  function showMode(): void {
+    const reading = mode === "read";
+    bar.classList.toggle("reading", reading);
+    listenBtn.setAttribute("aria-pressed", String(!reading));
+    readBtn.setAttribute("aria-pressed", String(reading));
+    if (reading) docPane.replaceChildren(speed.el);
+    else if (pdf) docPane.replaceChildren(pdf.el);
+    else renderText();
+    syncSentenceBar();
   }
 
   function setFollow(on: boolean): void {
@@ -188,7 +345,7 @@ export function readerView(id: string): View {
   }
 
   function renderText(): void {
-    if (pdf || !doc) return;
+    if (pdf || !doc || mode === "read") return;
     if (!text.length) {
       docPane.replaceChildren(h("p", { class: "pane-message" }, "The article text appears here once it has been read."));
       return;
@@ -312,10 +469,20 @@ export function readerView(id: string): View {
         chapterLabel.textContent = c?.title ?? "";
         renderChapters();
         renderText();
+        if (mode === "read") {
+          // a new chapter: reading carries on from its first sentence once the sentences arrive
+          pendingTime = null;
+          speed.setMessage(c?.ready ? null : "This chapter is still being generated.");
+          speed.setChapter([], 0, c?.title ?? "");
+        }
         if (follow && c?.start_page && pdf) pdf.showPage(c.start_page);
       },
-      onSentencesLoaded: () => renderText(),
+      onSentencesLoaded: () => {
+        renderText();
+        if (mode === "read") syncSpeed();
+      },
       onSentence: (s, i) => {
+        if (mode === "read") return; // the reading stage follows its own position
         currentSentence = s;
         nowReading.replaceChildren(
           s ? h("p", {}, h("span", { class: "label" }, "Now reading"), s.text) : h("p", { class: "quiet" }, "Press play to listen."),
@@ -339,15 +506,31 @@ export function readerView(id: string): View {
       rateSelect.value = String(RATES.includes(pb.rate) ? pb.rate : 1);
       player.audio.playbackRate = pb.rate;
     }
+    const settingsNow = await api.settings().catch(() => null);
+    if (settingsNow) setWpm(settingsNow.values.reading_wpm, false);
     const start = pb && doc.chapters.some((c) => c.idx === pb.chapter_idx) ? pb : { chapter_idx: 0, position_s: 0 };
     await player.load(start.chapter_idx, start.position_s, false);
-    nowReading.replaceChildren(h("p", { class: "quiet" }, pb && pb.position_s > 0 ? "Press play to resume where you left off." : "Press play to listen."));
-    renderText();
+    nowReading.replaceChildren(h("p", { class: "quiet" }, pb && pb.position_s > 0 ? "Press play to resume where you left off." : "Press play to listen or read."));
+    if (mode === "read" && !enterRead(start.position_s, true)) mode = "listen";
+    showMode();
   }
 
   const onKey = (e: KeyboardEvent) => {
     const t = e.target as HTMLElement;
     if (t.closest("input, select, textarea, [contenteditable]") || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (mode === "read") {
+      if (e.key === " " || e.key === "k") {
+        e.preventDefault();
+        speed.toggle();
+      } else if (e.key === "ArrowLeft" || e.key === "j") {
+        e.preventDefault();
+        stepSentence(-1);
+      } else if (e.key === "ArrowRight" || e.key === "l") {
+        e.preventDefault();
+        stepSentence(1);
+      }
+      return;
+    }
     if (e.key === " " || e.key === "k") {
       e.preventDefault();
       player?.toggle();
@@ -452,6 +635,7 @@ export function readerView(id: string): View {
       window.clearTimeout(qaTimer);
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("visibilitychange", onVisible);
+      speed.destroy();
       player?.destroy();
       pdf?.destroy();
     },
@@ -475,6 +659,22 @@ function storedNumber(key: string): number | null {
     return v > 0 ? v : null;
   } catch {
     return null;
+  }
+}
+
+function storedValue(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function storeValue(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* ignore */
   }
 }
 

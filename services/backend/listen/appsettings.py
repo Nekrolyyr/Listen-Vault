@@ -11,6 +11,11 @@ DEFAULTS: dict[str, Any] = {
     "voice": "af_heart",         # Kokoro voice id; Piper uses its single installed voice
     "speech_speed": 1.0,         # synthesis speed (playback speed is set in the player)
     "citations": "remove",       # remove | speak  — "(Smith et al., 2020)"
+    "reading_wpm": 300,          # speed-read target, words per minute (150–800)
+}
+
+INT_RANGES: dict[str, tuple[int, int]] = {
+    "reading_wpm": (150, 800),
 }
 
 CHOICES: dict[str, tuple] = {
@@ -40,6 +45,11 @@ def validate(changes: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(value, (int, float)) or not 0.7 <= float(value) <= 1.4:
                 raise ValueError(f"{key} must be between 0.7 and 1.4")
             value = float(value)
+        elif isinstance(default, int):
+            low, high = INT_RANGES[key]
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not low <= value <= high:
+                raise ValueError(f"{key} must be a whole number between {low} and {high}")
+            value = int(value)
         elif not isinstance(value, str) or not value or len(value) > 64:
             raise ValueError(f"{key} must be a short string")
         if key in CHOICES and value not in CHOICES[key]:

@@ -282,6 +282,40 @@ body.is-dragging, body.is-dragging * { cursor: inherit; user-select: none; }
 .follow.on { color: var(--accent); }
 .follow .label { font-size: 13px; }
 
+/* Listen | Read: the reading stage replaces the audio controls in the player bar and the document pane */
+.mode-switch { display: inline-flex; padding: 2px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2); }
+.mode-switch button { border: 0; padding: 5px 12px; border-radius: 999px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+.mode-switch button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
+.read-bar { display: none; gap: 6px; min-width: 0; }
+.read-bar .bar-seek { margin: 0; grid-area: auto; } /* the rows stack inside .read-bar; the audio seek's area does not apply */
+.read-bar .time { min-width: 64px; }
+.player-bar.reading { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "info extra" "read read"; }
+.player-bar.reading > .bar-controls, .player-bar.reading > .bar-seek { display: none; }
+.player-bar.reading .read-bar { display: grid; grid-area: read; }
+.player-bar.reading .bar-info { grid-area: info; }
+.player-bar.reading .bar-extra { grid-area: extra; }
+.player-bar.reading .bar-extra select, .player-bar.reading .follow { display: none; }
+
+/* speed reading stage */
+.speed-stage { display: flex; flex-direction: column; gap: 12px; height: 100%; box-sizing: border-box; padding: 12px 16px 16px; background: var(--surface-2); }
+.speed-meta { display: flex; justify-content: space-between; gap: 12px; min-width: 0; font-size: 13px; color: var(--muted); }
+.speed-chapter { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.speed-count { flex: none; font-variant-numeric: tabular-nums; }
+.speed-word-wrap { flex: 1 1 0; min-height: 120px; display: grid; place-items: center; text-align: center; padding: 0 8px; }
+.speed-word { max-width: 100%; font: 600 clamp(40px, 12vw, 88px)/1.1 var(--font); overflow-wrap: anywhere; }
+.speed-message { margin: 0; font-size: 16px; color: var(--muted); }
+.speed-pad {
+  flex: 0 0 48%; min-height: 160px; display: grid; place-items: center; padding: 16px; box-sizing: border-box;
+  border: 2px dashed var(--border); border-radius: 24px; background: var(--surface); color: var(--muted);
+  font-size: 18px; font-weight: 550; text-align: center; cursor: pointer;
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+.speed-pad.active { background: var(--accent); border: 2px solid var(--accent); color: var(--accent-text); }
+.speed-pad.locked { outline: 3px solid var(--accent); outline-offset: 4px; }
+.speed-pad:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.speed-hint { pointer-events: none; }
+
 /* ---------------------------------------------------------------- settings */
 .settings { max-width: 640px; margin: 0 auto; }
 .settings h1 { font-size: 24px; margin: 0 0 16px; }
