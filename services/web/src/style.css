@@ -345,8 +345,10 @@ body.is-dragging, body.is-dragging * { cursor: inherit; user-select: none; }
 }
 @media (max-width: 600px) {
   .content { padding: 16px 16px 40px; }
-  .topbar { flex-wrap: wrap; height: auto; gap: 4px 8px; padding: 8px 16px; }
-  .topbar nav { width: 100%; order: 3; justify-content: space-between; }
+  /* one row: the four sections share the width; the logo goes, the Library tab leads home */
+  .topbar { gap: 8px; padding: 0 12px; }
+  .brand { display: none; }
+  .topbar nav { flex: 1 1 auto; width: 100%; justify-content: space-between; }
   .topbar nav a { flex: 1 1 0; min-width: 0; padding: 8px 4px; text-align: center; font-size: 14px; }
   .topbar nav a.signout { display: none; }
 }
@@ -471,7 +473,7 @@ a.stat:hover { border-color: var(--accent); }
 .stat.idle .stat-value { color: var(--muted); }
 .stat.bad .stat-value { color: var(--bad); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-.tile { display: grid; align-content: start; gap: 8px; min-height: 130px; padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); text-decoration: none; }
+.tile { display: grid; align-content: start; gap: 8px; min-height: 130px; padding: 14px; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); text-decoration: none; }
 .tile:hover { border-color: var(--accent); box-shadow: var(--shadow); }
 .tile.empty { color: var(--muted); min-height: 0; padding: 10px 14px; }
 .tile-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; }
@@ -539,11 +541,30 @@ dialog.classifier::backdrop { background: rgb(0 0 0 / 35%); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 @media (max-width: 700px) {
-  .strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .strip .stat:last-child { grid-column: 1 / -1; }
-  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .search { flex: 1 1 100%; max-width: none; }
+  /* header: the title and Add paper share a row, search takes the full width under them */
+  .page-head { gap: 8px 12px; }
   .page-head h1 { font-size: 20px; }
+  .page-head .search { order: 3; flex: 1 1 100%; max-width: none; }
+  /* status: five figures in one compact row */
+  .strip { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+  .stat { min-height: 0; padding: 8px 6px; }
+  .stat-value { font-size: 18px; }
+  .stat-label { font-size: 11px; line-height: 1.2; }
+  /* areas: one full-width row each, so no cell is left empty next to a tall neighbour */
+  .tiles { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .tile { min-height: 0; grid-template-columns: minmax(0, 1fr) auto; align-content: center; gap: 4px 12px; padding: 10px 12px; }
+  .tile-head { grid-column: 1; grid-row: 1; }
+  .tile-count { grid-column: 2; grid-row: 1; white-space: nowrap; }
+  .tile > .bar { grid-column: 1 / -1; grid-row: 2; }
+  .tile-topics { grid-column: 1 / -1; grid-row: 3; }
+  /* attention: the title gets a full line */
+  /* attention: dot and title on the first line, reason and action below the title */
+  .attention-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; column-gap: 10px; align-items: center; }
+  .attention-row .dot { grid-column: 1; grid-row: 1; }
+  .attention-title { grid-column: 2; grid-row: 1; white-space: normal; overflow-wrap: anywhere; }
+  .attention-row > .chip { grid-column: 2; grid-row: 2; justify-self: start; }
+  .attention-row > .btn { grid-column: 3; grid-row: 2; }
+  .group { padding: 0; border: 0; background: none; gap: 6px; }
   .paper { grid-template-columns: 12px minmax(0, 1fr); }
   .paper-actions { grid-column: 2; flex-wrap: wrap; }
   .topic-row { grid-template-columns: minmax(0, 1fr); }
@@ -554,7 +575,6 @@ dialog.classifier::backdrop { background: rgb(0 0 0 / 35%); }
   .seg { flex: none; min-height: 40px; display: inline-flex; align-items: center; }
   .btn { min-height: 40px; }
   .menu summary { width: 44px; height: 44px; }
-  .tiles { align-items: start; }
   .filter-top { min-width: 0; }
   .add-panel, .dropzone, .url-form { min-width: 0; max-width: 100%; box-sizing: border-box; }
   .url-form input { min-width: 0; }
