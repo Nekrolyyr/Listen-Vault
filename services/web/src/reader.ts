@@ -1,4 +1,5 @@
 import { api, type DocDetail, type Question, type Sentence, type TextChapter } from "./api";
+import { stopAbstract } from "./abstract";
 import { authors, clock, duration, h, icon, toast } from "./dom";
 import type { View } from "./main";
 import { PdfView } from "./pdfview";
@@ -11,6 +12,7 @@ const MODE_KEY = "lv.readMode";
 const SAVE_EVERY_MS = 10_000;
 
 export function readerView(id: string): View {
+  stopAbstract(); // the reader has its own player
   let doc: DocDetail | null = null;
   let player: Player | null = null;
   let pdf: PdfView | null = null;

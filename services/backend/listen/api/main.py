@@ -17,7 +17,7 @@ from fastapi import Body, Depends, FastAPI, File, HTTPException, Query, Request,
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from .. import appsettings, config, db, jobs, library
+from .. import appsettings, areas, config, db, jobs, library
 from ..storage import DocPaths
 from .security import AuthMiddleware
 
@@ -44,11 +44,17 @@ SELECT d.*, j.state AS job_state, j.stage AS job_stage, j.progress_done, j.progr
        (SELECT coalesce(array_agg(t.term ORDER BY t.weight DESC), '{}') FROM (
             SELECT k.term, k.weight FROM document_keywords k
             WHERE k.document_id = d.id AND k.kind IN ('task', 'method', 'topic')
-            ORDER BY k.weight DESC, k.term LIMIT 4) t) AS top_terms
+            ORDER BY k.weight DESC, k.term LIMIT 4) t) AS top_terms,
+       (SELECT coalesce(json_agg(json_build_object('id', t.id, 'name', t.name) ORDER BY t.paper_count DESC, t.name),
+                        '[]'::json)
+          FROM document_topics dt JOIN topics t ON t.id = dt.topic_id WHERE dt.document_id = d.id) AS doc_topics,
+       ar.primary_area AS area_primary, ar.also_areas AS area_also, ar.confidence AS area_confidence,
+       ar.source AS area_source, ar.pinned AS area_pinned
 FROM documents d
 LEFT JOIN LATERAL (SELECT * FROM jobs WHERE document_id = d.id ORDER BY id DESC LIMIT 1) j ON true
 LEFT JOIN playback p ON p.document_id = d.id
 LEFT JOIN zotero_links z ON z.document_id = d.id
+LEFT JOIN document_areas ar ON ar.document_id = d.id
 """
 SORTS = {
     "added": "d.created_at DESC",
@@ -65,11 +71,15 @@ def parse_filters(
     not_zotero: bool = False,
     listened: bool | None = None,
     status: str | None = Query(default=None, pattern=r"^(catalogued|queued|processing|ready|failed)$"),
+    area: str | None = Query(default=None, pattern=r"^[a-z_]{2,20}$"),
+    topic: int | None = Query(default=None, ge=1),
 ) -> dict[str, Any]:
-    """Library filters shared by the list, the facets, the groups and the graph. Terms must all match.
-    Years are inclusive; a paper without a publication year is outside any year range."""
+    """Library filters shared by the list, the facets and the graph. Terms must all match.
+    Years are inclusive; a paper without a publication year is outside any year range. An area matches the
+    primary and the other areas of a paper; a topic matches the papers on it."""
     return {"term": [t.strip().lower() for t in term if t.strip()][:20], "year_from": year_from,
-            "year_to": year_to, "source": source, "not_zotero": not_zotero, "listened": listened, "status": status}
+            "year_to": year_to, "source": source, "not_zotero": not_zotero, "listened": listened, "status": status,
+            "area": area, "topic": topic}
 
 
 def filter_sql(f: dict[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -100,6 +110,14 @@ def filter_sql(f: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     if f["status"]:
         clauses.append("d.status = %(status)s")
         params["status"] = f["status"]
+    if f.get("area"):
+        clauses.append("EXISTS (SELECT 1 FROM document_areas a WHERE a.document_id = d.id "
+                       "AND (a.primary_area = %(area)s OR %(area)s = ANY(a.also_areas)))")
+        params["area"] = f["area"]
+    if f.get("topic") is not None:
+        clauses.append("EXISTS (SELECT 1 FROM document_topics dt WHERE dt.document_id = d.id "
+                       "AND dt.topic_id = %(topic)s)")
+        params["topic"] = f["topic"]
     return "".join(f" AND {c}" for c in clauses), params
 
 
@@ -124,6 +142,12 @@ class RerunIn(BaseModel):
 
 class QuestionIn(BaseModel):
     question: str = Field(min_length=3, max_length=500)
+
+
+class ClassificationIn(BaseModel):
+    primary: str = Field(max_length=20)
+    also: list[str] = Field(default_factory=list, max_length=areas.MAX_ALSO)
+    topics: dict[str, bool] = Field(default_factory=dict, max_length=100)  # topic name -> on this paper or not
 
 
 def _question_out(r: dict[str, Any]) -> dict[str, Any]:
@@ -153,6 +177,13 @@ def _doc_out(r: dict[str, Any]) -> dict[str, Any]:
     }
     if "top_terms" in r:
         out["top_terms"] = list(r["top_terms"] or [])
+    if "doc_topics" in r:
+        out["topics"] = r["doc_topics"] or []
+    if "area_primary" in r:
+        out["areas"] = None if r["area_primary"] is None else {
+            "primary": r["area_primary"], "also": list(r["area_also"] or []), "confidence": r["area_confidence"],
+            "source": r["area_source"], "pinned": r["area_pinned"],
+        }
     if "job_state" in r:
         out["job"] = None if r["job_state"] is None else {
             "state": r["job_state"], "stage": r["job_stage"], "done": r["progress_done"],
@@ -231,11 +262,16 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
         order = SORTS.get(sort, SORTS["added"])
         like = f"%{q.strip()}%"
         clause, params = filter_sql(filters)
+        area_ids = [a for a in areas.IDS if q.strip() and q.strip().lower() in areas.NAMES[a].lower()]
         with pool(request).connection() as conn:
             rows = conn.execute(
                 DOC_LIST_SQL + " WHERE (%(q)s = '' OR d.title ILIKE %(like)s "
-                "OR array_to_string(d.authors, ' ') ILIKE %(like)s)" + clause + " ORDER BY " + order,
-                {**params, "q": q.strip(), "like": like},
+                "OR array_to_string(d.authors, ' ') ILIKE %(like)s OR d.abstract ILIKE %(like)s "
+                "OR EXISTS (SELECT 1 FROM document_keywords k WHERE k.document_id = d.id AND k.term ILIKE %(like)s) "
+                "OR EXISTS (SELECT 1 FROM document_topics dt JOIN topics t ON t.id = dt.topic_id "
+                "WHERE dt.document_id = d.id AND t.name ILIKE %(like)s) "
+                "OR ar.primary_area = ANY(%(area_ids)s))" + clause + " ORDER BY " + order,
+                {**params, "q": q.strip(), "like": like, "area_ids": area_ids},
             ).fetchall()
         return [_doc_out(r) for r in rows]
 
@@ -275,26 +311,147 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
             "terms": by_kind,
         }
 
-    @app.get("/api/library/groups")
-    def library_groups(request: Request, filters: dict = Depends(parse_filters)):
-        """Papers grouped by similarity of their search terms (see library.py)."""
-        vecs, docs = _library_vectors(request, filters)
-        groups = [g for g in library.clusters(vecs) if len(g) > 1]
-        out = []
-        for members in sorted(groups, key=lambda g: -len(g)):
-            out.append({"label": library.label(members, vecs), "documents": [docs[m] for m in members]})
-        grouped = {m for g in groups for m in g}
-        return {"groups": out, "ungrouped": [docs[i] for i in docs if i not in grouped]}
+    @app.get("/api/library/overview")
+    def library_overview(request: Request):
+        """The map: every research area with its papers, unread and progress, and the papers that need a look."""
+        with pool(request).connection() as conn:
+            totals = conn.execute(
+                "SELECT count(*) AS papers, count(*) FILTER (WHERE NOT d.listened) AS unread, "
+                "count(*) FILTER (WHERE d.status = 'catalogued') AS not_processed, "
+                "count(*) FILTER (WHERE d.status = 'failed') AS failed, coalesce(sum(d.duration_s), 0) AS audio_s "
+                "FROM documents d").fetchone()
+            unplaced = conn.execute(
+                "SELECT count(*) AS n FROM documents d LEFT JOIN document_areas a ON a.document_id = d.id "
+                "WHERE a.document_id IS NULL AND d.status <> 'failed'").fetchone()["n"]
+            per_area = {r["area"]: r for r in conn.execute(
+                "SELECT u.area, count(*) AS papers, count(*) FILTER (WHERE d.listened) AS listened, "
+                "count(*) FILTER (WHERE NOT d.listened) AS unread "
+                "FROM document_areas a JOIN documents d ON d.id = a.document_id, "
+                "LATERAL unnest(array[a.primary_area] || a.also_areas) AS u(area) GROUP BY u.area").fetchall()}
+            topics_by_area: dict[str, list[dict[str, Any]]] = {}
+            for t in conn.execute("SELECT id, name, area, paper_count FROM topics WHERE area IS NOT NULL "
+                                  "ORDER BY paper_count DESC, name"):
+                topics_by_area.setdefault(t["area"], []).append(
+                    {"id": t["id"], "name": t["name"], "papers": t["paper_count"]})
+            attention = conn.execute(
+                "SELECT d.id, d.title, d.status, a.confidence, a.pinned, a.document_id AS placed FROM documents d "
+                "LEFT JOIN document_areas a ON a.document_id = d.id "
+                "WHERE d.status = 'failed' OR a.document_id IS NULL OR (a.confidence = 'low' AND NOT a.pinned) "
+                "ORDER BY d.created_at DESC LIMIT 20").fetchall()
+        out_areas = []
+        for area_id in areas.IDS:
+            stats = per_area.get(area_id)
+            papers = stats["papers"] if stats else 0
+            listened = stats["listened"] if stats else 0
+            out_areas.append({
+                "id": area_id, "name": areas.NAMES[area_id], "papers": papers,
+                "unread": stats["unread"] if stats else 0, "listened": listened,
+                "progress": round(listened / papers, 4) if papers else None,
+                "topics": topics_by_area.get(area_id, [])[:3],
+            })
+        return {
+            "papers": totals["papers"], "unread": totals["unread"], "not_processed": totals["not_processed"],
+            "failed": totals["failed"], "audio_s": totals["audio_s"], "unplaced": unplaced, "areas": out_areas,
+            "attention": [{"id": str(r["id"]), "title": r["title"] or "Untitled", "status": r["status"],
+                           "reason": "failed" if r["status"] == "failed" else
+                           "no area yet" if r["placed"] is None else "low confidence"} for r in attention],
+        }
+
+    @app.get("/api/library/areas/{area_id}")
+    def library_area(request: Request, area_id: str):
+        if area_id not in areas.NAMES:
+            raise HTTPException(404, "Area not found")
+        with pool(request).connection() as conn:
+            totals = conn.execute(
+                "SELECT count(*) AS papers, count(*) FILTER (WHERE d.listened) AS listened, "
+                "count(*) FILTER (WHERE NOT d.listened) AS unread "
+                "FROM document_areas a JOIN documents d ON d.id = a.document_id "
+                "WHERE a.primary_area = %(a)s OR %(a)s = ANY(a.also_areas)", {"a": area_id}).fetchone()
+            topic_rows = conn.execute(
+                "SELECT t.id, t.name, t.terms, t.paper_count AS papers, "
+                "count(d.id) FILTER (WHERE NOT d.listened) AS unread FROM topics t "
+                "LEFT JOIN document_topics dt ON dt.topic_id = t.id LEFT JOIN documents d ON d.id = dt.document_id "
+                "WHERE t.area = %s GROUP BY t.id ORDER BY t.paper_count DESC, t.name", (area_id,)).fetchall()
+        return {
+            "id": area_id, "name": areas.NAMES[area_id], "papers": totals["papers"],
+            "listened": totals["listened"], "unread": totals["unread"],
+            "topics": [{"id": r["id"], "name": r["name"], "terms": list(r["terms"])[:4], "papers": r["papers"],
+                        "unread": r["unread"]} for r in topic_rows],
+        }
+
+    @app.get("/api/library/topics/{topic_id}")
+    def library_topic(request: Request, topic_id: int):
+        """A topic: its terms, its papers by status, related topics, and the topics before and after it in its area."""
+        with pool(request).connection() as conn:
+            row = conn.execute("SELECT id, name, terms, area, paper_count FROM topics WHERE id = %s",
+                               (topic_id,)).fetchone()
+            if row is None:
+                raise HTTPException(404, "Topic not found")
+            counts = conn.execute(
+                "SELECT count(*) FILTER (WHERE NOT d.listened) AS unread FROM document_topics dt "
+                "JOIN documents d ON d.id = dt.document_id WHERE dt.topic_id = %s", (topic_id,)).fetchone()
+            related = conn.execute(
+                "SELECT t2.id, t2.name, count(*) AS shared FROM document_topics a "
+                "JOIN document_topics b ON b.document_id = a.document_id AND b.topic_id <> a.topic_id "
+                "JOIN topics t2 ON t2.id = b.topic_id WHERE a.topic_id = %s "
+                "GROUP BY t2.id, t2.name ORDER BY shared DESC, t2.name LIMIT 6", (topic_id,)).fetchall()
+            siblings = conn.execute(
+                "SELECT id, name FROM topics WHERE area IS NOT DISTINCT FROM %s ORDER BY paper_count DESC, name",
+                (row["area"],)).fetchall()
+        order = [{"id": r["id"], "name": r["name"]} for r in siblings]
+        i = [r["id"] for r in siblings].index(topic_id)
+        return {
+            "id": row["id"], "name": row["name"], "terms": list(row["terms"]), "area": row["area"],
+            "area_name": areas.NAMES.get(row["area"] or "", None), "papers": row["paper_count"],
+            "unread": counts["unread"],
+            "related": [{"id": r["id"], "name": r["name"], "shared": r["shared"]} for r in related],
+            "prev": order[i - 1] if i > 0 else None,
+            "next": order[i + 1] if i + 1 < len(order) else None,
+        }
+
+    @app.patch("/api/documents/{doc_id}/classification")
+    def put_classification(request: Request, doc_id: UUID, body: ClassificationIn):
+        """A hand-made placement: the areas and topics chosen here are kept when the library is classified again."""
+        if body.primary not in areas.NAMES or any(a not in areas.NAMES for a in body.also):
+            raise HTTPException(422, "Unknown area")
+        primary, also = areas.clean(body.primary, body.also)
+        with pool(request).connection() as conn, conn.transaction():
+            get_doc(conn, doc_id)
+            conn.execute(
+                "INSERT INTO document_areas (document_id, primary_area, also_areas, confidence, source, pinned) "
+                "VALUES (%s, %s, %s, 'high', 'manual', true) ON CONFLICT (document_id) DO UPDATE SET "
+                "primary_area = EXCLUDED.primary_area, also_areas = EXCLUDED.also_areas, confidence = 'high', "
+                "source = 'manual', pinned = true, updated_at = now()",
+                (doc_id, primary, also))
+            for name, on in body.topics.items():
+                name = name[:200]
+                conn.execute(
+                    "INSERT INTO document_topic_overrides (document_id, topic_name, include) VALUES (%s, %s, %s) "
+                    "ON CONFLICT (document_id, topic_name) DO UPDATE SET include = EXCLUDED.include",
+                    (doc_id, name, on))
+                if on:
+                    conn.execute("INSERT INTO document_topics (document_id, topic_id) SELECT %s, id FROM topics "
+                                 "WHERE name = %s ON CONFLICT DO NOTHING", (doc_id, name))
+                else:
+                    conn.execute("DELETE FROM document_topics WHERE document_id = %s AND topic_id IN "
+                                 "(SELECT id FROM topics WHERE name = %s)", (doc_id, name))
+            conn.execute("UPDATE topics t SET paper_count = (SELECT count(*) FROM document_topics dt "
+                         "WHERE dt.topic_id = t.id)")
+            return _doc_out(get_doc(conn, doc_id))
+
+    @app.post("/api/library/classify", status_code=202)
+    def classify_library(request: Request, force: bool = False):
+        """Place the papers in research areas. Without force only the papers that have no area yet are placed."""
+        with pool(request).connection() as conn, conn.transaction():
+            job = jobs.enqueue_library(conn, "areas", {"force": force})
+        return {"queued": job is not None}
 
     @app.get("/api/library/topics")
     def library_topics(request: Request):
         with pool(request).connection() as conn:
-            rows = conn.execute("SELECT id, name, terms FROM topics ORDER BY name").fetchall()
-            out = []
-            for r in rows:
-                n = conn.execute("SELECT count(DISTINCT document_id) AS n FROM document_keywords "
-                                 "WHERE term = ANY(%s)", (list(r["terms"]),)).fetchone()["n"]
-                out.append({"id": r["id"], "name": r["name"], "terms": list(r["terms"]), "documents": n})
+            rows = conn.execute("SELECT id, name, terms, area, paper_count FROM topics").fetchall()
+        out = [{"id": r["id"], "name": r["name"], "terms": list(r["terms"]), "area": r["area"],
+                "documents": r["paper_count"]} for r in rows]
         return sorted(out, key=lambda t: (-t["documents"], t["name"]))
 
     @app.post("/api/library/topics/rebuild", status_code=202)
@@ -312,14 +469,17 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
                 if row is None:
                     raise HTTPException(404, "Topic not found")
                 label, terms = row["name"], list(row["terms"])
+                rows = conn.execute(
+                    "SELECT d.id, d.title, d.published, d.status, d.listened, d.source_type FROM documents d "
+                    "JOIN document_topics dt ON dt.document_id = d.id WHERE dt.topic_id = %s", (topic,)).fetchall()
             elif term and term.strip():
                 label, terms = term.strip(), [term.strip().lower()]
+                rows = conn.execute(
+                    "SELECT d.id, d.title, d.published, d.status, d.listened, d.source_type FROM documents d "
+                    "WHERE EXISTS (SELECT 1 FROM document_keywords k WHERE k.document_id = d.id AND k.term = ANY(%s))",
+                    (terms,)).fetchall()
             else:
                 raise HTTPException(422, "Give a topic or a keyword")
-            rows = conn.execute(
-                "SELECT d.id, d.title, d.published, d.status, d.listened, d.source_type FROM documents d "
-                "WHERE EXISTS (SELECT 1 FROM document_keywords k WHERE k.document_id = d.id AND k.term = ANY(%s))",
-                (terms,)).fetchall()
         items = []
         for r in rows:
             dated = library.publication_date(r["published"])

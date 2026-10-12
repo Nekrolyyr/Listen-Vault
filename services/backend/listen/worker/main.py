@@ -9,7 +9,7 @@ from uuid import UUID
 
 from .. import config, db, jobs, zotero
 from ..storage import DocPaths
-from . import qa, topics
+from . import classify, qa, topics
 from .fetch import FetchError
 from .grobid import GrobidError
 from .llm import LlmClient
@@ -19,6 +19,7 @@ log = logging.getLogger("listen.worker")
 
 IDLE_SLEEP_S = 3
 ORPHAN_SWEEP_S = 3600
+AREAS_CHECK_S = 60
 
 
 class Worker:
@@ -81,6 +82,9 @@ class Worker:
         if job["kind"] == "topics":
             topics.rebuild(self.pool, self.pipeline.llm)
             return
+        if job["kind"] == "areas":
+            classify.run(self.pool, self.settings.docs_dir, self.pipeline.llm, job["id"], job["options"] or {})
+            return
         raise PipelineError(f"Unknown job kind {job['kind']!r}")
 
     def _fail(self, job, message: str, retryable: bool) -> None:
@@ -93,6 +97,12 @@ class Worker:
         with self.pool.connection() as conn, conn.transaction():
             if self.settings.zotero_configured:
                 jobs.enqueue_library(conn, "zotero_sync")
+
+    def schedule_areas(self) -> None:
+        """Place papers that have no research area yet (new imports, new uploads)."""
+        with self.pool.connection() as conn, conn.transaction():
+            if classify.unplaced_exists(conn):
+                jobs.enqueue_library(conn, "areas")
 
     def sweep_orphans(self) -> int:
         """Remove document folders whose database row is gone (deleted while a job was running)."""
@@ -115,6 +125,7 @@ class Worker:
     def loop(self) -> None:
         last_sweep = 0.0
         last_zotero: float | None = None
+        last_areas: float | None = None
         while not self.stopping:
             if time.monotonic() - last_sweep > ORPHAN_SWEEP_S:
                 if n := self.sweep_orphans():
@@ -124,6 +135,9 @@ class Worker:
                     last_zotero is None or time.monotonic() - last_zotero >= self.settings.zotero_sync_s):
                 last_zotero = time.monotonic()
                 self.schedule()
+            if last_areas is None or time.monotonic() - last_areas >= AREAS_CHECK_S:
+                last_areas = time.monotonic()
+                self.schedule_areas()
             if not self.run_once():
                 time.sleep(IDLE_SLEEP_S)
 

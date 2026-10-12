@@ -34,6 +34,17 @@ export interface Doc {
   playback: ListedPlayback | null;
   abstract: string | null;
   top_terms?: string[];
+  /** Research areas: one primary area and up to two more (absent on the detail view of old responses). */
+  areas?: DocAreas | null;
+  topics?: { id: number; name: string }[];
+}
+
+export interface DocAreas {
+  primary: string;
+  also: string[];
+  confidence: "high" | "medium" | "low";
+  source: "llm" | "rules" | "manual";
+  pinned: boolean;
 }
 
 /** Where a paper was left off, as the library list shows it. progress is the share of the whole paper. */
@@ -54,10 +65,13 @@ export interface Filters {
   notZotero: boolean;
   listened: boolean | null;
   status: Doc["status"] | null;
+  area: string | null;
+  topic: number | null;
 }
 
 export const NO_FILTERS: Filters = {
   term: [], yearFrom: null, yearTo: null, source: null, notZotero: false, listened: null, status: null,
+  area: null, topic: null,
 };
 
 export interface Facets {
@@ -101,7 +115,58 @@ export interface Topic {
   id: number;
   name: string;
   terms: string[];
+  area: string | null;
   documents: number;
+}
+
+/** One research area on the map. The top topics are the three largest of the area. */
+export interface AreaTile {
+  id: string;
+  name: string;
+  papers: number;
+  unread: number;
+  listened: number;
+  progress: number | null;
+  topics: { id: number; name: string; papers: number }[];
+}
+
+export interface Overview {
+  papers: number;
+  unread: number;
+  not_processed: number;
+  failed: number;
+  audio_s: number;
+  unplaced: number;
+  areas: AreaTile[];
+  attention: { id: string; title: string; status: Doc["status"]; reason: "failed" | "no area yet" | "low confidence" }[];
+}
+
+export interface AreaPage {
+  id: string;
+  name: string;
+  papers: number;
+  listened: number;
+  unread: number;
+  topics: { id: number; name: string; terms: string[]; papers: number; unread: number }[];
+}
+
+export interface TopicPage {
+  id: number;
+  name: string;
+  terms: string[];
+  area: string | null;
+  area_name: string | null;
+  papers: number;
+  unread: number;
+  related: { id: number; name: string; shared: number }[];
+  prev: { id: number; name: string } | null;
+  next: { id: number; name: string } | null;
+}
+
+export interface ClassificationIn {
+  primary: string;
+  also: string[];
+  topics: Record<string, boolean>;
 }
 
 export interface TimelineItem {
@@ -118,11 +183,6 @@ export interface Timeline {
   label: string;
   terms: string[];
   items: TimelineItem[];
-}
-
-export interface Groups {
-  groups: { label: string[]; documents: GroupDoc[] }[];
-  ungrouped: GroupDoc[];
 }
 
 export interface Chapter {
@@ -221,6 +281,8 @@ export function filterQuery(f: Filters): string {
   if (f.source) p.set("source", f.source);
   if (f.listened !== null) p.set("listened", String(f.listened));
   if (f.status) p.set("status", f.status);
+  if (f.area) p.set("area", f.area);
+  if (f.topic !== null) p.set("topic", String(f.topic));
   return p.toString();
 }
 
@@ -256,7 +318,12 @@ export const api = {
   documents: (q = "", sort = "added", f: Filters = NO_FILTERS) =>
     request<Doc[]>("GET", `/api/documents?q=${encodeURIComponent(q)}&sort=${sort}&${filterQuery(f)}`),
   facets: (f: Filters) => request<Facets>("GET", `/api/library/facets?${filterQuery(f)}`),
-  groups: (f: Filters) => request<Groups>("GET", `/api/library/groups?${filterQuery(f)}`),
+  overview: () => request<Overview>("GET", "/api/library/overview"),
+  area: (id: string) => request<AreaPage>("GET", `/api/library/areas/${encodeURIComponent(id)}`),
+  topic: (id: number) => request<TopicPage>("GET", `/api/library/topics/${id}`),
+  classification: (id: string, body: ClassificationIn) =>
+    request<Doc>("PATCH", `/api/documents/${id}/classification`, body),
+  classify: (force: boolean) => request<{ queued: boolean }>("POST", `/api/library/classify?force=${force}`),
   graph: (f: Filters) => request<Graph>("GET", `/api/library/graph?${filterQuery(f)}`),
   topics: () => request<Topic[]>("GET", "/api/library/topics"),
   rebuildTopics: () => request<{ queued: boolean }>("POST", "/api/library/topics/rebuild"),

@@ -4,17 +4,22 @@ A keyword counts when at least two papers have it (from the LLM's terms; frequen
 noisy). Keywords are compared by the papers they share (cosine), and similar ones are clustered with the same
 average-linkage method as the paper groups. Then the LLM names each cluster and checks its members in batches:
 a term it says does not belong is left out. Without an LLM a topic is named after its most common term.
-Topics are rebuilt as a whole, so the result always matches the current keywords.
+
+A paper is on a topic when it has one of the topic's keywords, or when at least CONTENT_MATCHES of the topic's
+terms appear in its title or abstract. The second rule places the catalogued papers, which have no keywords yet.
+A topic's area is the most common primary area of its papers. Topics are rebuilt as a whole, so the result always
+matches the current keywords, placements and the papers' manual topic choices (see document_topic_overrides).
 """
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
+import re
+from collections import Counter, defaultdict
 from math import sqrt
 
 from psycopg_pool import ConnectionPool
 
-from .. import library
+from .. import areas, library
 from .llm import LlmClient, LlmError
 
 log = logging.getLogger(__name__)
@@ -25,6 +30,7 @@ CLUSTER_SIMILARITY = 0.3
 MIN_TOPIC_TERMS = 2
 MAX_TOPICS = 25
 BATCH = 40              # members checked per LLM call
+CONTENT_MATCHES = 2     # terms of a topic that must appear in a paper's title or abstract for it to count
 
 
 def term_vectors(doc_terms: dict[str, set[str]]) -> dict[str, dict[str, float]]:
@@ -89,20 +95,83 @@ def build(doc_terms: dict[str, set[str]], llm: LlmClient | None) -> list[tuple[s
     return topics
 
 
+def in_topic(terms: list[str], keywords: set[str], text: str) -> bool:
+    """True when the paper has one of the terms as a keyword, or the terms appear in its text (lower case)."""
+    if any(t in keywords for t in terms):
+        return True
+    found = sum(1 for t in terms if re.search(rf"\b{re.escape(t)}\b", text))
+    return found >= CONTENT_MATCHES
+
+
+def topic_area(members: list[str], primary: dict[str, str]) -> str:
+    """The most common primary area of the members; other only when nothing else fits."""
+    counts = Counter(primary[m] for m in members if primary.get(m, areas.OTHER) != areas.OTHER)
+    return counts.most_common(1)[0][0] if counts else areas.OTHER
+
+
+def matching_topic(terms: set[str], old: dict[int, set[str]], taken: set[int]) -> int | None:
+    """The id of the earlier topic whose terms overlap these the most (at least half of both), so that a topic keeps
+    its id, and its links, when the library is rebuilt."""
+    best, best_score = None, 0.5
+    for topic_id, old_terms in old.items():
+        if topic_id in taken or not old_terms:
+            continue
+        score = len(terms & old_terms) / len(terms | old_terms)
+        if score >= best_score:
+            best, best_score = topic_id, score
+    return best
+
+
 def rebuild(pool: ConnectionPool, llm: LlmClient | None) -> int:
-    """Recompute the topics from the LLM keywords of the library. Returns the number of topics."""
+    """Recompute the topics and their papers. Returns the number of topics."""
     with pool.connection() as conn:
         rows = conn.execute("SELECT document_id, term FROM document_keywords WHERE source = 'llm'").fetchall()
+        everything = conn.execute("SELECT document_id, term FROM document_keywords").fetchall()
+        papers = conn.execute("SELECT id, title, abstract FROM documents WHERE status <> 'failed'").fetchall()
+        placed = conn.execute("SELECT document_id, primary_area FROM document_areas").fetchall()
+        overrides = conn.execute("SELECT document_id, topic_name, include FROM document_topic_overrides").fetchall()
     doc_terms: dict[str, set[str]] = defaultdict(set)
     for r in rows:
         doc_terms[str(r["document_id"])].add(r["term"])
+    keywords: dict[str, set[str]] = defaultdict(set)
+    for r in everything:
+        keywords[str(r["document_id"])].add(r["term"])
+    text = {str(p["id"]): f"{p['title'] or ''} {p['abstract'] or ''}".lower() for p in papers}
+    primary = {str(r["document_id"]): r["primary_area"] for r in placed}
     if llm is not None and not llm.wait_ready(timeout_s=60):
         llm = None
         log.warning("LLM not available; topics are named after their most common keyword")
-    topics = build(doc_terms, llm)
+    built = build(doc_terms, llm)
     with pool.connection() as conn, conn.transaction():
-        conn.execute("DELETE FROM topics")
-        with conn.cursor() as cur:
-            cur.executemany("INSERT INTO topics (name, terms) VALUES (%s, %s)", topics)
-    log.info("topics: %d", len(topics))
-    return len(topics)
+        old = {r["id"]: set(r["terms"]) for r in conn.execute("SELECT id, terms FROM topics")}
+        taken: set[int] = set()
+        for name, terms in built:
+            members = [doc for doc in text if in_topic(terms, keywords.get(doc, set()), text[doc])]
+            values = (name, terms, topic_area(members, primary), len(members))
+            topic_id = matching_topic(set(terms), old, taken)
+            if topic_id is None:
+                topic_id = conn.execute(
+                    "INSERT INTO topics (name, terms, area, paper_count) VALUES (%s, %s, %s, %s) RETURNING id",
+                    values).fetchone()["id"]
+            else:
+                conn.execute("UPDATE topics SET name = %s, terms = %s, area = %s, paper_count = %s, built_at = now() "
+                             "WHERE id = %s", (*values, topic_id))
+            taken.add(topic_id)
+            conn.execute("DELETE FROM document_topics WHERE topic_id = %s", (topic_id,))
+            with conn.cursor() as cur:
+                cur.executemany("INSERT INTO document_topics (document_id, topic_id) VALUES (%s, %s)",
+                                [(doc, topic_id) for doc in members])
+        conn.execute("DELETE FROM topics WHERE NOT (id = ANY(%s::int[]))", (list(taken),))
+        for o in overrides:
+            if o["include"]:
+                conn.execute(
+                    "INSERT INTO document_topics (document_id, topic_id) SELECT %s, id FROM topics WHERE name = %s "
+                    "ON CONFLICT DO NOTHING", (o["document_id"], o["topic_name"]))
+            else:
+                conn.execute(
+                    "DELETE FROM document_topics WHERE document_id = %s AND topic_id IN "
+                    "(SELECT id FROM topics WHERE name = %s)", (o["document_id"], o["topic_name"]))
+        conn.execute("UPDATE topics t SET paper_count = (SELECT count(*) FROM document_topics dt "
+                     "WHERE dt.topic_id = t.id)")
+    log.info("topics: %d", len(built))
+    return len(built)

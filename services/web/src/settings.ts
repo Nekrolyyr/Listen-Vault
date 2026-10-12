@@ -27,6 +27,25 @@ export function settingsView(): View {
     }
   }
 
+  async function classify(force: boolean): Promise<void> {
+    if (force && !confirm("Place every paper in its area again? Choices you made by hand are kept.")) return;
+    try {
+      const { queued } = await api.classify(force);
+      toast(queued ? "Placing the papers in areas. The map updates as they are done." : "Already being placed.");
+    } catch (err) {
+      toast((err as Error).message, "error");
+    }
+  }
+
+  async function rebuildTopics(): Promise<void> {
+    try {
+      const { queued } = await api.rebuildTopics();
+      toast(queued ? "Topics are being rebuilt. Reload in a minute or two." : "Topics are already being rebuilt.");
+    } catch (err) {
+      toast((err as Error).message, "error");
+    }
+  }
+
   function render(s: Settings): void {
     const v = s.values;
     const groups = Object.entries(ACCENTS).map(([prefix, label]) =>
@@ -82,6 +101,12 @@ export function settingsView(): View {
         h("legend", {}, "Library"),
         h("p", { class: "hint" }, "Papers added before keywords existed have none. This finds their task, methods, datasets, topics and keywords in the background."),
         h("button", { type: "button", class: "btn", onclick: backfill }, "Extract keywords for the library"),
+        h("p", { class: "hint" }, "Areas place each paper in a main area and up to two others, from its abstract and content. New papers are placed automatically. Choices made by hand are kept."),
+        h("div", { class: "form-actions wrap" },
+          h("button", { type: "button", class: "btn", onclick: () => classify(false) }, "Place papers in areas"),
+          h("button", { type: "button", class: "btn", onclick: () => classify(true) }, "Place all papers again"),
+          h("button", { type: "button", class: "btn", onclick: rebuildTopics }, "Rebuild topics"),
+        ),
       ),
       h("p", { class: "hint" }, "Changes apply to newly added documents. For existing ones, choose “Regenerate audio” in the library."),
       h("div", { class: "form-actions" }, h("button", { type: "submit", class: "btn primary" }, "Save settings")),

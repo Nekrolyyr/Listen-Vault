@@ -191,7 +191,7 @@ def _library_doc(settings, title, published, status, terms, listened=False, sour
     return str(doc_id)
 
 
-def test_library_filters_facets_groups_and_graph(client, settings):
+def test_library_filters_facets_and_graph(client, settings):
     a = _library_doc(settings, "Head pruning", "2024-05-02", "ready",
                      [("method", "head pruning"), ("task", "machine translation")], listened=True)
     b = _library_doc(settings, "Pruning again", "2024-07-01", "ready",
@@ -221,10 +221,6 @@ def test_library_filters_facets_groups_and_graph(client, settings):
     narrowed = client.get("/api/library/facets?term=head%20pruning", headers=AUTH).json()
     assert narrowed["total"] == 2 and narrowed["listened"] == {"true": 1, "false": 1}
 
-    groups = client.get("/api/library/groups", headers=AUTH).json()
-    assert [sorted(d["id"] for d in g["documents"]) for g in groups["groups"]] == [sorted([a, b])]
-    assert "head pruning" in groups["groups"][0]["label"] and [d["title"] for d in groups["ungrouped"]] == ["Sleep"]
-
     graph = client.get("/api/library/graph", headers=AUTH).json()
     group = {n["title"]: n["group"] for n in graph["nodes"]}
     assert len(graph["nodes"]) == 3 and group["Head pruning"] == group["Pruning again"] != group["Sleep"]
@@ -251,10 +247,12 @@ def test_timeline_and_topics(client, settings):
     assert client.post("/api/library/topics/rebuild", headers=AUTH).json() == {"queued": True}
     assert client.post("/api/library/topics/rebuild", headers=AUTH).json() == {"queued": False}
     with psycopg.connect(settings.database_url, autocommit=True) as conn:
-        topic_id = conn.execute("INSERT INTO topics (name, terms) VALUES ('Sleep and memory', '{sleep,memory}') "
-                                "RETURNING id").fetchone()[0]
+        topic_id = conn.execute("INSERT INTO topics (name, terms, paper_count) VALUES "
+                                "('Sleep and memory', '{sleep,memory}', 4) RETURNING id").fetchone()[0]
+        conn.execute("INSERT INTO document_topics (document_id, topic_id) SELECT id, %s FROM documents", (topic_id,))
     listed = client.get("/api/library/topics", headers=AUTH).json()
-    assert listed == [{"id": topic_id, "name": "Sleep and memory", "terms": ["sleep", "memory"], "documents": 4}]
+    assert listed == [{"id": topic_id, "name": "Sleep and memory", "terms": ["sleep", "memory"], "area": None,
+                       "documents": 4}]
     by_topic = client.get(f"/api/library/timeline?topic={topic_id}", headers=AUTH).json()
     assert by_topic["label"] == "Sleep and memory" and len(by_topic["items"]) == 4
 

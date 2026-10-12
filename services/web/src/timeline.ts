@@ -1,7 +1,7 @@
 // Timeline of a topic (or one keyword): every paper and article that has it, placed by publication date.
 // Papers and articles get their own lanes; papers without a date are listed at the end.
 import { api, NO_FILTERS, type Timeline, type TimelineItem, type Topic } from "./api";
-import { h, icon, toast } from "./dom";
+import { h, toast } from "./dom";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const W = 960;
@@ -11,7 +11,7 @@ const RIGHT = 20;
 const LANES: Record<"pdf" | "url", number> = { pdf: 95, url: 175 };
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-type Selection = { topic: number } | { term: string };
+export type Selection = { topic: number } | { term: string };
 
 function svg<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}): SVGElementTagNameMap[K] {
   const el = document.createElementNS(SVG_NS, tag);
@@ -116,8 +116,9 @@ function list(items: TimelineItem[], onOpen: (item: TimelineItem) => void): HTML
   return h("ol", { class: "timeline-list" }, ...items.map(entry));
 }
 
-export function timelinePanel(onOpen: (item: TimelineItem) => void): HTMLElement {
-  let selected: Selection | null = null;
+/** The papers and articles on a topic or a keyword over time. `initial` opens one of them straight away. */
+export function timelinePanel(onOpen: (item: TimelineItem) => void, initial: Selection | null = null): HTMLElement {
+  let selected: Selection | null = initial;
   let topics: Topic[] = [];
   let data: Timeline | null = null;
   let token = 0;
@@ -134,19 +135,6 @@ export function timelinePanel(onOpen: (item: TimelineItem) => void): HTMLElement
       if (term) select({ term });
     },
   });
-  const rebuild = h("button", {
-    type: "button",
-    class: "btn small",
-    title: "Recompute the topics from the keywords of the library",
-    onclick: async () => {
-      try {
-        const { queued } = await api.rebuildTopics();
-        toast(queued ? "Topics are being rebuilt. Reload in a minute or two." : "Topics are already being rebuilt.");
-      } catch (err) {
-        toast((err as Error).message, "error");
-      }
-    },
-  }, icon("refresh"), "Rebuild topics");
   const body = h("div", { class: "timeline-body", "aria-live": "polite" });
 
   function isSelected(s: Selection): boolean {
@@ -211,7 +199,6 @@ export function timelinePanel(onOpen: (item: TimelineItem) => void): HTMLElement
     body.replaceChildren(
       h("h2", { class: "timeline-title" }, data.label, h("span", { class: "quiet" }, ` · ${data.items.length} ${data.items.length === 1 ? "item" : "items"}`)),
       ...(dated.length ? [chart(dated, onOpen)] : []),
-      h("p", { class: "hint" }, "Filters in the column on the left do not apply to the timeline."),
       list([...dated, ...undated], onOpen),
     );
   }
@@ -219,11 +206,13 @@ export function timelinePanel(onOpen: (item: TimelineItem) => void): HTMLElement
   const el = h(
     "section",
     { class: "timeline" },
-    h("div", { class: "timeline-controls" }, termInput, suggestions, rebuild),
+    h("div", { class: "timeline-controls" }, termInput, suggestions),
     chips,
     body,
   );
   renderBody();
-  loadTopics();
+  loadTopics().then(() => {
+    if (initial) void select(initial);
+  });
   return el;
 }
