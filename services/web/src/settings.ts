@@ -182,7 +182,15 @@ export function settingsView(): View {
   api.settings().then(render, (e) => toast((e as Error).message, "error"));
   loadZotero();
   return {
-    el: h("section", { class: "settings" }, h("h1", {}, "Settings"), form, zoteroBox),
+    el: h(
+      "section",
+      { class: "settings" },
+      h("h1", {}, "Settings"),
+      form,
+      zoteroBox,
+      // on phones the top bar hides sign-out, so it is also offered here
+      h("p", { class: "signout-row" }, h("a", { href: "/auth/logout", class: "btn" }, "Sign out")),
+    ),
     title: "Settings",
   };
 }

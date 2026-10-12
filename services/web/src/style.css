@@ -345,8 +345,10 @@ body.is-dragging, body.is-dragging * { cursor: inherit; user-select: none; }
 }
 @media (max-width: 600px) {
   .content { padding: 16px 16px 40px; }
-  .topbar { gap: 8px; }
-  .topbar nav a { padding: 6px 8px; }
+  .topbar { flex-wrap: wrap; height: auto; gap: 4px 8px; padding: 8px 16px; }
+  .topbar nav { width: 100%; order: 3; justify-content: space-between; }
+  .topbar nav a { flex: 1 1 0; min-width: 0; padding: 8px 4px; text-align: center; font-size: 14px; }
+  .topbar nav a.signout { display: none; }
 }
 @media (max-width: 400px) {
   .brand-name { display: none; }
@@ -547,4 +549,13 @@ dialog.classifier::backdrop { background: rgb(0 0 0 / 35%); }
   .topic-row { grid-template-columns: minmax(0, 1fr); }
   .topic-counts { grid-column: 1; grid-row: auto; }
   .pick-grid { grid-template-columns: 1fr 1fr; }
+  .seg-group { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .seg-group::-webkit-scrollbar { display: none; }
+  .seg { flex: none; min-height: 40px; display: inline-flex; align-items: center; }
+  .btn { min-height: 40px; }
+  .menu summary { width: 44px; height: 44px; }
+  .tiles { align-items: start; }
+  .filter-top { min-width: 0; }
+  .add-panel, .dropzone, .url-form { min-width: 0; max-width: 100%; box-sizing: border-box; }
+  .url-form input { min-width: 0; }
 }

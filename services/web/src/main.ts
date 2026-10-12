@@ -43,7 +43,7 @@ function shell(view: View, active: Section): HTMLElement {
       "header",
       { class: "topbar" },
       h("a", { href: "/", "data-link": true, class: "brand" }, h("img", { src: "/favicon.svg", alt: "", width: 24, height: 24 }), h("span", { class: "brand-name" }, "Listen Vault")),
-      h("nav", { "aria-label": "Main" }, link("/", "Library", "library"), link("/papers", "Papers", "papers"), link("/explore", "Explore", "explore"), link("/settings", "Settings", "settings"), h("a", { href: "/auth/logout", class: "quiet" }, "Sign out")),
+      h("nav", { "aria-label": "Main" }, link("/", "Library", "library"), link("/papers", "Papers", "papers"), link("/explore", "Explore", "explore"), link("/settings", "Settings", "settings"), h("a", { href: "/auth/logout", class: "quiet signout" }, "Sign out")),
     ),
     h("main", { class: "content" }, view.el),
     abstractBar,
