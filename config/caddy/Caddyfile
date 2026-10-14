@@ -1,6 +1,6 @@
 # Local reverse proxy for the api. It asks for the login (users.caddy, written by scripts/add-user.sh),
-# then passes the user on the way Authelia and Traefik did in the production setup. The api rejects
-# requests without the shared X-Listen-Proxy secret, so only this proxy can reach it.
+# then passes the user on to the api in the Remote-User header. The api rejects requests without the
+# shared X-Listen-Proxy secret, so only this proxy can reach it.
 http://:8080 {
 	import /etc/caddy/users.caddy
 
