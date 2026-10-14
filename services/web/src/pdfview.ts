@@ -21,6 +21,7 @@ interface PageView {
 export type ZoomMode = "page-fit" | "page-width" | number;
 
 const PROGRAMMATIC_MS = 900; // smooth scrolls by the app last about this long
+const CSS_PER_PT = 96 / 72; // PDF points to CSS pixels; a page view's scale is the zoom, before this factor
 const VIEWPORT_ANCHOR = 0.3; // fraction of the viewport height above the sentence
 const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
 const ZOOM_KEY = "lv.zoom";
@@ -157,7 +158,7 @@ export class PdfView {
       return;
     }
     const pageTop = pv.div.getBoundingClientRect().top - this.container.getBoundingClientRect().top + this.container.scrollTop;
-    const target = pageTop + y * pv.scale - this.container.clientHeight * VIEWPORT_ANCHOR;
+    const target = pageTop + y * pv.scale * CSS_PER_PT - this.container.clientHeight * VIEWPORT_ANCHOR;
     this.programmaticUntil = performance.now() + PROGRAMMATIC_MS;
     this.container.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
   }
@@ -214,7 +215,7 @@ export class PdfView {
     pv.div.querySelectorAll(".sentence-hl").forEach((el) => el.remove());
     for (const [p, x, y, w, ht] of this.highlight) {
       if (p !== pageNo) continue;
-      const s = pv.scale;
+      const s = pv.scale * CSS_PER_PT;
       pv.div.append(
         h("div", {
           class: "sentence-hl",

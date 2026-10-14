@@ -218,3 +218,14 @@ def test_the_api_key_never_reaches_the_log(settings, pool, caplog):
     with caplog.at_level("DEBUG", logger="listen.zotero"), pytest.raises(zotero.ZoteroError):
         zotero.sync(pool, _settings(settings), client)
     assert "secret" not in caplog.text
+
+
+def test_later_change_to_the_paper_keeps_its_pdf_attachment(settings, pool):
+    s = _settings(settings)
+    zotero.sync(pool, s, _client([PAPER, PDF_ATTACHMENT]))
+    # a tag is added later: the paper changes, its PDF attachment does not come back in this sync
+    retagged = {**PAPER, "version": 50, "data": {**PAPER["data"], "tags": [{"tag": "listen-queue"}, {"tag": "x"}]}}
+    zotero.sync(pool, s, _client([retagged], version=50))
+    with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
+        link = conn.execute("SELECT pdf_attachment FROM zotero_links WHERE zotero_key = 'AAA'").fetchone()
+    assert link["pdf_attachment"] == "PPP"

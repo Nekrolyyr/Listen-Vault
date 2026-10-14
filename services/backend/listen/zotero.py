@@ -158,9 +158,10 @@ def _catalogue(conn: Connection, key: str, version: int, data: dict[str, Any], p
             {"title": title, "authors": authors, "published": published, "abstract": abstract, "doi": doi,
              "url": url, "source_type": source_type, "id": doc_id},
         )
+        # keep the known PDF when this sync did not return its attachment (only the parent item changed)
         conn.execute(
-            "UPDATE zotero_links SET library_version = %s, pdf_attachment = %s, tags = %s, collections = %s, "
-            "synced_at = now() WHERE document_id = %s",
+            "UPDATE zotero_links SET library_version = %s, pdf_attachment = COALESCE(%s, pdf_attachment), "
+            "tags = %s, collections = %s, synced_at = now() WHERE document_id = %s",
             (version, pdf_key, tags, collections, doc_id),
         )
     return "catalogued" if status == "catalogued" else "kept"
