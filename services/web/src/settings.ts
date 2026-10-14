@@ -188,8 +188,6 @@ export function settingsView(): View {
       h("h1", {}, "Settings"),
       form,
       zoteroBox,
-      // on phones the top bar hides sign-out, so it is also offered here
-      h("p", { class: "signout-row" }, h("a", { href: "/auth/logout", class: "btn" }, "Sign out")),
     ),
     title: "Settings",
   };

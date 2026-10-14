@@ -1,4 +1,4 @@
-"""Drive the real UI in Chromium against the native dev api. Traefik/Authelia are emulated with headers.
+"""Drive the real UI in Chromium against the native dev api. The login proxy is emulated with headers.
 
 Checks library rendering, adding a link, opening the reader, PDF rendering, playback with sentence
 tracking and PDF follow, resume position, settings, and phone layout. Writes screenshots to OUT.

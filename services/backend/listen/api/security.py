@@ -1,8 +1,8 @@
 """Request authentication for the api.
 
-Traefik runs Authelia's forwardAuth first and only forwards authenticated requests, adding the
-Remote-User header (from Authelia) and X-Listen-Proxy (a shared secret). Other containers on the
-shared traefik network could reach the api directly, so both headers are required here.
+The login proxy (Caddy, see docker-compose.yml) checks the login first and only forwards authenticated
+requests, adding the Remote-User header (the logged-in user) and X-Listen-Proxy (a shared secret).
+Other containers on the same Docker network could reach the api directly, so both headers are required.
 State-changing requests must also carry X-Requested-With, which a cross-site form cannot set.
 """
 from __future__ import annotations

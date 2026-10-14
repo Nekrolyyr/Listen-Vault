@@ -1,6 +1,6 @@
-// Typed client for the listen-vault api. All requests go through Traefik + Authelia; when the
-// session has expired, Authelia answers with its login page instead of JSON, so we send the
-// browser to the portal and come back afterwards.
+// Typed client for the listen-vault api. All requests go through the login proxy (Caddy in
+// docker-compose.yml). When the login is missing or has expired, the proxy answers with a login
+// prompt instead of JSON, so we reload the page and the browser asks again.
 
 export interface Job {
   state: "queued" | "running" | "done" | "failed";
@@ -287,7 +287,7 @@ export function filterQuery(f: Filters): string {
 }
 
 export function toLogin(): never {
-  window.location.href = `/auth/?rd=${encodeURIComponent(window.location.href)}`;
+  window.location.reload();
   throw new ApiError(401, "Signing in…");
 }
 

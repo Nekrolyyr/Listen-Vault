@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 
 // In development, run the api locally and proxy it (headers are added by the dev proxy below,
-// standing in for Traefik + Authelia). Production builds are served by the api itself.
+// standing in for the login proxy). Production builds are served by the api itself.
 const devUser = process.env.LISTEN_USER ?? "doctor";
 const devSecret = process.env.LISTEN_PROXY_SECRET ?? "dev-secret";
 
