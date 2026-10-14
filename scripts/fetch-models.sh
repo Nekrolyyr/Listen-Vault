@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
-# Downloads and prepares all models into $LISTEN_CONFIG_DIR/models:
+# Downloads and prepares all models into ./models:
 #   llm/bloomz-7b1-Q4_K_M.gguf   BLOOMZ-7b1, converted and quantized with llama.cpp
 #   kokoro/                       Kokoro-82M ONNX (fp32) + voices
 #   piper/                        Piper fallback voice (en_US-lessac-medium)
 # Skips anything that already exists. Needs ~35 GB free temporarily for the BLOOMZ conversion.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-[ -f .env ] && { set -a; . ./.env; set +a; }
 
-M=${LISTEN_CONFIG_DIR:-/vault/configs/listen-vault}/models
+M="$PWD/models"  # absolute, because docker run -v needs it
 LLAMA_FULL=ghcr.io/ggml-org/llama.cpp:full-b11515
 mkdir -p "$M/llm" "$M/kokoro" "$M/piper"
 

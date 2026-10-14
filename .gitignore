@@ -1,15 +1,18 @@
-# secrets and runtime state
+# secrets and local settings (copy .env.template to .env)
 .env
 *.env
-!*.env.example
-config/authelia/secrets/
-config/authelia/users*.yml
-config/authelia/db.sqlite3
-config/authelia/notification.txt
+config/caddy/users.caddy
 
-# model weights and content (persistent data lives under /vault, not here)
-models/
+# local data, created by the stack and the scripts
 data/
+models/
+backups/
+
+# private deployment files, kept on disk and not published
+compose.yaml
+config/authelia/
+tests/e2e/passkey_e2e.py
+tests/e2e/labels_to_file.py
 
 # tooling
 __pycache__/

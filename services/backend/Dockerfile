@@ -1,4 +1,4 @@
-# Build context: the repository root (see compose.yaml). Targets: api, worker.
+# Build context: the repository root (see docker-compose.yml). Targets: api, worker.
 
 FROM node:22-alpine AS web
 WORKDIR /web
@@ -9,7 +9,7 @@ RUN npm run build
 
 FROM python:3.12-slim-bookworm AS base
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
-# uid/gid 1000 matches the host user that owns /vault/listen-vault
+# uid/gid 1000 matches the host user that owns ./data/library (the first user on most Linux systems)
 RUN groupadd -g 1000 app && useradd -u 1000 -g app -m -d /home/app app
 WORKDIR /app
 COPY services/backend/pyproject.toml ./

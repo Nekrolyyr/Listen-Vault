@@ -1,0 +1,141 @@
+# listen-vault for localhost. Open http://localhost:8080 (LISTEN_PORT) and sign in with LISTEN_USER and the
+# password set by scripts/add-user.sh. See README.md for the first start.
+#
+# Everything lives in this folder (git-ignored):
+#   ./data/library    documents, text and audio   -> /data
+#   ./data/postgres   database files              -> /var/lib/postgresql/data
+#   ./models          model files                 -> /models (read-only for llm and worker)
+#   ./config/caddy/users.caddy   login written by scripts/add-user.sh
+#
+# Only caddy publishes a port, and only on 127.0.0.1. Caddy asks for the login and passes the user on to
+# the api, which accepts requests only with that header and the shared LISTEN_PROXY_SECRET.
+
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql://listen:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/listen
+  DATA_DIR: /data
+  TZ: ${TZ:-UTC}
+  ZOTERO_USER_ID: ${ZOTERO_USER_ID:-}
+  ZOTERO_API_KEY: ${ZOTERO_API_KEY:-}
+  ZOTERO_QUEUE_TAG: ${ZOTERO_QUEUE_TAG:-listen-queue}
+  ZOTERO_SYNC_MINUTES: ${ZOTERO_SYNC_MINUTES:-30}
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: listen-caddy
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      LISTEN_PROXY_SECRET: ${LISTEN_PROXY_SECRET:?set LISTEN_PROXY_SECRET in .env}
+    ports:
+      - "127.0.0.1:${LISTEN_PORT:-8080}:8080"
+    volumes:
+      - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./config/caddy/users.caddy:/etc/caddy/users.caddy:ro
+
+  api:
+    build:
+      context: .
+      dockerfile: services/backend/Dockerfile
+      target: api
+    image: listen-vault/api:local
+    container_name: listen-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *backend-env
+      LISTEN_USER: ${LISTEN_USER:?set LISTEN_USER in .env}
+      LISTEN_PROXY_SECRET: ${LISTEN_PROXY_SECRET:?set LISTEN_PROXY_SECRET in .env}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
+    volumes:
+      - ./data/library:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  worker:
+    build:
+      context: .
+      dockerfile: services/backend/Dockerfile
+      target: worker
+    image: listen-vault/worker:local
+    container_name: listen-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      llm:
+        condition: service_started
+      grobid:
+        condition: service_started
+    environment:
+      <<: *backend-env
+      MODELS_DIR: /models
+      LLM_URL: http://llm:8080
+      GROBID_URL: http://grobid:8070
+      TTS_THREADS: ${TTS_THREADS:-8}
+      OCR_JOBS: ${OCR_JOBS:-8}
+    volumes:
+      - ./data/library:/data
+      - ./models:/models:ro
+      - ./config/normalizer:/app/config/normalizer:ro
+    stop_grace_period: 60s
+
+  llm:
+    image: ghcr.io/ggml-org/llama.cpp:server-b11515
+    container_name: listen-llm
+    restart: unless-stopped
+    command:
+      - --model
+      - /models/llm/bloomz-7b1-Q4_K_M.gguf
+      - --ctx-size
+      - "2048"
+      - --threads
+      - ${LLM_THREADS:-8}
+      - --threads-batch
+      - ${LLM_THREADS_BATCH:-8}
+      - --parallel
+      - "1"
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --no-webui
+    volumes:
+      - ./models:/models:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+
+  grobid:
+    image: grobid/grobid:0.8.2.1-crf
+    container_name: listen-grobid
+    restart: unless-stopped
+    environment:
+      JAVA_OPTS: -Xmx2g
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: listen-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: listen
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: listen
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U listen -d listen"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
