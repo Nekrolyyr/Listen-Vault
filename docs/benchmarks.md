@@ -29,15 +29,42 @@ Text: a 107-word scientific paragraph (32.5 s of speech). RTF = synthesis time �
 `bigscience/bloomz-7b1` converted with llama.cpp `convert_hf_to_gguf.py` (BLOOM architecture is
 supported), quantized to **Q4_K_M: 4.4 GiB on disk, fits the 6 GB container limit**.
 
-`llama-bench`, prompt 1,024 tokens, generation 128 tokens:
+`llama-bench`, prompt 1,024 tokens, generation 128 tokens (CPU only):
 
 | Threads | Prompt processing | Generation |
 |---|---|---|
 | **8** | **57.9 tok/s** | **5.7 tok/s** |
 | 14 | 53.2 tok/s | 5.4 tok/s |
 
-So a full 1,200-token chunk with a two-sentence answer takes about 40 s; typical section summaries
+So a full 1,200-token chunk with a two-sentence answer takes about 40 s on CPU; typical section summaries
 took 8–13 s.
+
+### GPU offload (GTX 1660, 6 GB VRAM)
+
+llama-server, CUDA build `server-cuda-b11515`, 1,126-token prompt, 128 generated tokens, end-of-sequence ignored
+so the full length is generated. Each run started from a loaded model after a warm-up request.
+
+| `LLM_GPU_LAYERS` | Prompt processing | Generation | Peak VRAM |
+|---|---|---|---|
+| 0 (CPU) | 34 tok/s | 5.1 tok/s | 266 MiB |
+| 20 (previous default) | 77 tok/s | 12.4 tok/s | 3,998 MiB |
+| **99 (all, default)** | **81 tok/s** | **39.9 tok/s** | **5,584 MiB** |
+
+All 31 layers fit with about 560 MiB free. Generation is about 8× faster than CPU. A 1,126-token chunk
+with a two-sentence answer (about 50 tokens) now takes about 15 s (14 s prompt processing, about 1 s
+generation), not about 40 s. The context stays at 2,048 tokens: a smaller context or quantized
+KV cache would be needed to free more VRAM.
+
+Extraction quality (`services/backend/tests/eval/eval_extraction.py`, 9 hand-labelled papers, two runs each):
+
+| Run | Task recall (GPU / CPU) | Methods recall (GPU / CPU) | Datasets recall (GPU / CPU) | Eval time (GPU / CPU) |
+|---|---|---|---|---|
+| 1 | 0.06 / 0.17 | 0.16 / 0.24 | 0.50 / 0.50 | 144 s / 506 s |
+| 2 | 0.06 / 0.11 | 0.20 / 0.24 | 0.50 / 0.50 | 150 s / 498 s |
+
+Methods and datasets match within noise. Task terms recall lower on the GPU in both runs (18 gold terms,
+so the gap is a few terms). Extraction is about 3.4× faster. Set `LLM_GPU_LAYERS=0` to go back to CPU if
+the task terms matter more than speed.
 
 ### Prompt choice
 
@@ -51,7 +78,8 @@ back to an extractive summary when it fails.
 
 | Setting | Value | Reason |
 |---|---|---|
-| `LLM_THREADS`, `LLM_THREADS_BATCH` | 8 | fastest for both prompt and generation |
+| `LLM_GPU_LAYERS` | 99 | all layers on the GPU: 8× the CPU generation speed, fits in 6 GB VRAM |
+| `LLM_THREADS`, `LLM_THREADS_BATCH` | 8 | fastest for both prompt and generation on CPU |
 | `TTS_THREADS` | 8 | fastest Kokoro configuration |
 | Kokoro model | fp32 | faster than int8 on this CPU |
 | Default voice | `af_heart` | change in Settings after listening to the samples |

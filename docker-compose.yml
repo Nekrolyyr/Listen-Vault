@@ -88,14 +88,26 @@ services:
     stop_grace_period: 60s
 
   llm:
-    image: ghcr.io/ggml-org/llama.cpp:server-b11515
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda-b11515
     container_name: listen-llm
     restart: unless-stopped
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     command:
       - --model
       - /models/llm/bloomz-7b1-Q4_K_M.gguf
       - --ctx-size
       - "2048"
+      - --n-gpu-layers
+      - ${LLM_GPU_LAYERS:-99}
       - --threads
       - ${LLM_THREADS:-8}
       - --threads-batch

@@ -122,6 +122,7 @@ Every setting is in `.env` (see `.env.template` for the full list). Empty values
 | `LISTEN_PORT` | Port on 127.0.0.1 (default 8080) |
 | `TZ` | Time zone for logs and timestamps (default UTC) |
 | `MAX_UPLOAD_MB` | Largest upload (default 100) |
+| `LLM_GPU_LAYERS` | Language model layers on the NVIDIA GPU (default 99 = all, about 5.6 GB VRAM). Set 0 to run on CPU only. |
 | `LLM_THREADS`, `LLM_THREADS_BATCH`, `TTS_THREADS`, `OCR_JOBS` | CPU threads per task (default 8). Use your physical core count. |
 | `ZOTERO_*` | Optional Zotero import (see above) |
 
