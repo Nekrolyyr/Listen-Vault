@@ -121,7 +121,9 @@ def test_password_change_keeps_this_session_and_ends_the_others(anon, settings):
 def test_terms_are_public_and_a_new_version_must_be_accepted(app_for, settings, tmp_path):
     with TestClient(app_for()) as anon:
         terms = anon.get("/api/terms", headers=AUTH).json()
-        assert terms["version"] == "2026-10-20" and "operator" in terms["text"].lower()
+        assert terms["version"] == "2026-10-21" and "operator" in terms["text"].lower()
+        # the storage limit the quota features enforce (docs/gaps-plan.md, phase 5)
+        assert "storage limit of 1 GB" in terms["text"]
     # a new version appears: existing accounts have not accepted it
     new_dir = tmp_path / "terms"
     new_dir.mkdir()
