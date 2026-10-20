@@ -1,7 +1,7 @@
 """Operator commands, run inside the api container (see scripts/).
 
     python -m listen.cli make-admin <email>         create or promote an administrator (asks for the password)
-    python -m listen.cli set-quota <email> <pages>  change a user's page quota
+    python -m listen.cli set-quota <email> [<pages>] [--storage-gb N]  change page quota and/or storage
     python -m listen.cli dedup-existing [--apply]   merge stored PDFs that have the same bytes (dry run by default)
 """
 from __future__ import annotations
@@ -56,15 +56,48 @@ def make_admin(settings: config.Settings, args) -> None:
 
 
 def set_quota(settings: config.Settings, args) -> None:
-    if args.pages < 0:
+    if args.pages is not None and args.pages < 0:
         raise SystemExit("The quota cannot be negative")
+    if args.storage_gb is not None and args.storage_gb < 0:
+        raise SystemExit("The storage limit cannot be negative")
+    if args.pages is None and args.storage_gb is None:
+        raise SystemExit("Give a page quota, a storage limit with --storage-gb, or both")
     with _connect(settings) as conn, conn.transaction():
         user = accounts.find_user(conn, accounts.normalise_email(args.email))
         if user is None:
             raise SystemExit("No such account")
-        conn.execute("UPDATE users SET page_quota = %s WHERE id = %s", (args.pages, user["id"]))
-        accounts.audit(conn, None, "cli.set-quota", user["id"], {"from": user["page_quota"], "to": args.pages})
-    print(f"{args.email}: quota {args.pages} pages")
+        if args.pages is not None:
+            conn.execute("UPDATE users SET page_quota = %s WHERE id = %s", (args.pages, user["id"]))
+            accounts.audit(conn, None, "cli.set-quota", user["id"], {"from": user["page_quota"], "to": args.pages})
+        if args.storage_gb is not None:
+            size = int(args.storage_gb * 1024 ** 3)
+            conn.execute("UPDATE users SET storage_quota_bytes = %s WHERE id = %s", (size, user["id"]))
+            accounts.audit(conn, None, "cli.set-storage", user["id"],
+                           {"from": user["storage_quota_bytes"], "to": size})
+    print(f"{args.email}: updated")
+
+
+def measure_storage(settings: config.Settings, args) -> None:
+    """Fill in the sizes of the files stored before storage was counted: the PDFs and the audio files."""
+    with _connect(settings) as conn, conn.transaction():
+        pdfs = 0
+        for row in conn.execute("SELECT id FROM documents WHERE source_type = 'pdf' AND pdf_bytes = 0").fetchall():
+            pdf = DocPaths(settings.docs_dir, row["id"]).source_pdf
+            if pdf.exists():
+                conn.execute("UPDATE documents SET pdf_bytes = %s WHERE id = %s", (pdf.stat().st_size, row["id"]))
+                pdfs += 1
+        audio = 0
+        for row in conn.execute(
+                "SELECT n.document_id, nc.narration_id, nc.idx, nc.audio_file FROM narration_chapters nc "
+                "JOIN narrations n ON n.id = nc.narration_id WHERE nc.bytes = 0").fetchall():
+            f = DocPaths(settings.docs_dir, row["document_id"]).root / row["audio_file"]
+            if f.exists():
+                conn.execute("UPDATE narration_chapters SET bytes = %s WHERE narration_id = %s AND idx = %s",
+                             (f.stat().st_size, row["narration_id"], row["idx"]))
+                audio += 1
+        conn.execute("UPDATE narrations n SET bytes = (SELECT coalesce(sum(bytes), 0) FROM narration_chapters "
+                     "WHERE narration_id = n.id)")
+    print(f"measured {pdfs} PDF(s) and {audio} audio file(s)")
 
 
 def dedup_existing(settings: config.Settings, args) -> None:
@@ -126,9 +159,11 @@ def main(argv: list[str] | None = None) -> None:
     admin = sub.add_parser("make-admin", help="create or promote an administrator")
     admin.add_argument("email")
     admin.add_argument("--password-stdin", action="store_true", help="read the password from stdin (scripts)")
-    quota = sub.add_parser("set-quota", help="change a user's page quota")
+    quota = sub.add_parser("set-quota", help="change a user's page quota and/or storage limit")
     quota.add_argument("email")
-    quota.add_argument("pages", type=int)
+    quota.add_argument("pages", type=int, nargs="?")
+    quota.add_argument("--storage-gb", type=float, help="storage limit in GB (default 1)")
+    sub.add_parser("measure-storage", help="measure the stored PDFs and audio that predate storage accounting")
     dedup = sub.add_parser("dedup-existing", help="merge stored PDFs with the same bytes")
     dedup.add_argument("--apply", action="store_true")
     args = parser.parse_args(argv)
@@ -139,6 +174,8 @@ def main(argv: list[str] | None = None) -> None:
         make_admin(settings, args)
     elif args.command == "set-quota":
         set_quota(settings, args)
+    elif args.command == "measure-storage":
+        measure_storage(settings, args)
     elif args.command == "dedup-existing":
         dedup_existing(settings, args)
 

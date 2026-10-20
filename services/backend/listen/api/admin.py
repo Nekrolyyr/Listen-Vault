@@ -10,6 +10,7 @@ from .deps import admin_only, pool
 
 class UserPatch(BaseModel):
     page_quota: int | None = Field(default=None, ge=0, le=10_000_000)
+    storage_quota_bytes: int | None = Field(default=None, ge=0, le=10 * 1024 ** 4)
     is_disabled: bool | None = None
     is_admin: bool | None = None
 
@@ -17,6 +18,7 @@ class UserPatch(BaseModel):
 # The columns an administrator may change; the keys of UserPatch.
 USER_FIELD_SQL = {
     "page_quota": "UPDATE users SET page_quota = %s WHERE id = %s",
+    "storage_quota_bytes": "UPDATE users SET storage_quota_bytes = %s WHERE id = %s",
     "is_disabled": "UPDATE users SET is_disabled = %s WHERE id = %s",
     "is_admin": "UPDATE users SET is_admin = %s WHERE id = %s",
 }
@@ -42,10 +44,13 @@ def register_admin_routes(app: FastAPI, settings: config.Settings) -> None:
                 "FROM users u LEFT JOIN library_entries le ON le.user_id = u.id "
                 "LEFT JOIN documents d ON d.id = le.document_id "
                 "GROUP BY u.id ORDER BY u.created_at, u.id").fetchall()
+        with pool(request).connection() as conn:
+            storage = {r["id"]: accounts.storage_status(conn, r["id"]) for r in rows}
         return [{
             "id": r["id"], "email": r["email"], "is_admin": r["is_admin"], "is_disabled": r["is_disabled"],
             "verified": r["email_verified_at"] is not None, "page_quota": r["page_quota"],
             "pages_used": int(r["pages_used"]), "documents": r["documents"],
+            "storage_used": storage[r["id"]]["used"], "storage_quota": storage[r["id"]]["quota"],
             "created_at": r["created_at"], "last_login_at": r["last_login_at"],
         } for r in rows]
 
@@ -120,7 +125,12 @@ def register_admin_routes(app: FastAPI, settings: config.Settings) -> None:
                 "(SELECT count(*) FROM documents) AS documents, "
                 "(SELECT count(*) FROM jobs WHERE state IN ('queued', 'running')) AS open_jobs, "
                 "(SELECT count(DISTINCT user_id) FROM sessions WHERE expires_at > now()) AS signed_in").fetchone()
-        return {k: int(v) for k, v in row.items()}
+        stats = {k: int(v) for k, v in row.items()}
+        with pool(request).connection() as conn:
+            stats["stored_bytes"] = int(conn.execute(
+                "SELECT coalesce(sum(pdf_bytes), 0) + (SELECT coalesce(sum(bytes), 0) FROM narration_chapters) AS n "
+                "FROM documents").fetchone()["n"])
+        return stats
 
     # ------------------------------------------------------------------ maintenance
     @app.get("/api/admin/maintenance")

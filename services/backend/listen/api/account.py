@@ -54,6 +54,7 @@ def _me(conn, user: dict[str, Any], current: str | None) -> dict[str, Any]:
     return {
         "id": user["id"], "email": user["email"], "is_admin": user["is_admin"],
         "quota": accounts.quota_status(conn, user),
+        "storage": accounts.storage_status(conn, user["id"]),
         "terms": {"current": current,
                   "accepted": accounts.has_current_consent(conn, user["id"], current)},
     }

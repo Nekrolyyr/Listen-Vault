@@ -156,7 +156,7 @@ def test_cli_set_quota_and_dedup_of_legacy_copies(settings, tmp_path_factory, ca
             conn.execute("INSERT INTO library_entries (user_id, document_id, listened) VALUES (%s, %s, %s)",
                          (owner["id"], doc, len(ids) == 1))
             ids.append(doc)
-    args = type("A", (), {"email": "old@example.org", "pages": 25})
+    args = type("A", (), {"email": "old@example.org", "pages": 25, "storage_gb": None})
     cli.set_quota(settings, args)
     with db(settings) as conn:
         assert conn.execute("SELECT page_quota FROM users").fetchone()["page_quota"] == 25

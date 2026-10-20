@@ -225,6 +225,10 @@ def _title_from_filename(name: str) -> str:
     return re.sub(r"[_\s]+", " ", stem).strip()[:300] or "Untitled PDF"
 
 
+def human_size(size: int) -> str:
+    return f"{size / 1024 ** 2:.0f} MB" if size < 1024 ** 3 else f"{size / 1024 ** 3:.1f} GB"
+
+
 def _count_pages(path: Path) -> int:
     return len(PdfReader(str(path)).pages)
 
@@ -268,6 +272,14 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
         if jobs.open_for_user(conn, user["id"]) >= jobs.MAX_OPEN_PER_USER:
             raise HTTPException(429, {"code": "busy", "message": f"You already have {jobs.MAX_OPEN_PER_USER} papers "
                                                                  "waiting to be processed. Let them finish first."})
+
+    def require_storage(conn, user: dict[str, Any], size: int) -> None:
+        status = accounts.storage_status(conn, user["id"])
+        if status["used"] + size > status["quota"]:
+            raise HTTPException(403, {
+                "code": "storage_full", "used": status["used"], "quota": status["quota"],
+                "message": f"Your storage is full ({human_size(status['used'])} of {human_size(status['quota'])}). "
+                           "Delete papers or audio to add more."})
 
     def require_quota(conn, user: dict[str, Any], pages: int) -> None:
         status = accounts.quota_status(conn, user)
@@ -594,24 +606,27 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
                 pages = _count_pages(tmp)
             except Exception as e:  # noqa: BLE001 - any parser failure means an unreadable file
                 raise HTTPException(415, "This PDF could not be read") from e
+            stored = tmp.stat().st_size
             with pool(request).connection() as conn, conn.transaction():
                 require_terms(conn, user)
                 require_job_room(conn, user)
-                existing = conn.execute("SELECT id, pages FROM documents WHERE content_sha256 = %s",
+                existing = conn.execute("SELECT id, pages, pdf_bytes FROM documents WHERE content_sha256 = %s",
                                         (digest.hexdigest(),)).fetchone()
                 if existing is not None:
                     if documents.in_library(conn, user["id"], existing["id"]):
                         raise HTTPException(409, "This paper is already in your library")
                     require_quota(conn, user, existing["pages"] or 0)
+                    require_storage(conn, user, existing["pdf_bytes"] or 0)
                     documents.add_entry(conn, user["id"], existing["id"])
                     narrations.queue(conn, existing["id"], user["id"])  # the text is there; the audio is this user's
                     return _doc_out(get_doc(conn, existing["id"], user["id"]))
                 require_quota(conn, user, pages)
+                require_storage(conn, user, stored)
                 row = conn.execute(
-                    "INSERT INTO documents (source_type, original_filename, title, has_pdf, content_sha256, pages) "
-                    "VALUES ('pdf', %s, %s, true, %s, %s) RETURNING id",
+                    "INSERT INTO documents (source_type, original_filename, title, has_pdf, content_sha256, pages, "
+                    "pdf_bytes) VALUES ('pdf', %s, %s, true, %s, %s, %s) RETURNING id",
                     (Path(file.filename or "upload.pdf").name[:300], _title_from_filename(file.filename or ""),
-                     digest.hexdigest(), pages)).fetchone()
+                     digest.hexdigest(), pages, stored)).fetchone()
                 paths = DocPaths(settings.docs_dir, row["id"]).ensure()
                 tmp.replace(paths.source_pdf)
                 documents.add_entry(conn, user["id"], row["id"])
@@ -632,6 +647,7 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
             require_terms(conn, user)
             # A page's size is known only after it is read, so a link is refused only when the quota is already full.
             require_quota(conn, user, 0)
+            require_storage(conn, user, 1)  # refused once the storage is full (its size is not known yet)
             require_job_room(conn, user)
             existing = conn.execute("SELECT id FROM documents WHERE source_type = 'url' AND source_url = %s "
                                     "ORDER BY created_at LIMIT 1", (url,)).fetchone()

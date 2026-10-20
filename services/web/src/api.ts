@@ -18,6 +18,8 @@ export interface Me {
   email: string;
   is_admin: boolean;
   quota: { used: number; quota: number; remaining: number };
+  /** Bytes: the PDFs of the library and the user's audio, against the limit. */
+  storage: { used: number; quota: number; remaining: number };
   terms: { current: string | null; accepted: boolean };
 }
 
@@ -30,6 +32,8 @@ export interface AdminUser {
   page_quota: number;
   pages_used: number;
   documents: number;
+  storage_used: number;
+  storage_quota: number;
   created_at: string;
   last_login_at: string | null;
 }
@@ -414,7 +418,7 @@ export const api = {
   /** A link, not a request: the browser downloads the zip. */
   exportUrl: "/api/account/export",
   adminUsers: () => request<AdminUser[]>("GET", "/api/admin/users"),
-  adminUpdateUser: (id: number, changes: { page_quota?: number; is_disabled?: boolean; is_admin?: boolean }) =>
+  adminUpdateUser: (id: number, changes: { page_quota?: number; storage_quota_bytes?: number; is_disabled?: boolean; is_admin?: boolean }) =>
     request<unknown>("PATCH", `/api/admin/users/${id}`, changes),
   adminRevokeSessions: (id: number) => request<{ revoked: number }>("POST", `/api/admin/users/${id}/sessions/revoke`),
   adminRegistration: () => request<{ open: boolean; email_verification: boolean }>("GET", "/api/admin/registration"),

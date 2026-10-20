@@ -29,6 +29,10 @@ function termsBlocks(text: string): HTMLElement[] {
   return blocks;
 }
 
+function formatBytes(bytes: number): string {
+  return bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(2)} GB` : `${Math.round(bytes / 1024 ** 2)} MB`;
+}
+
 function errorLine(): HTMLElement {
   return h("p", { class: "form-error", role: "alert" });
 }
@@ -228,7 +232,10 @@ export function accountView(me: Me): View {
       h("h1", {}, "Account"),
       h("p", {}, me.email),
       h("div", { class: "quota" }, bar(quota.quota ? quota.used / quota.quota : 0, `${quota.used} of ${quota.quota} pages used`)),
+      h("div", { class: "quota" }, bar(me.storage.quota ? me.storage.used / me.storage.quota : 0,
+        `${formatBytes(me.storage.used)} of ${formatBytes(me.storage.quota)} storage used`)),
       h("p", { class: "hint" }, "Each page of a paper in your library counts. Papers that other people also have count for you too; they are stored once."),
+      h("p", { class: "hint" }, "Storage counts the PDF of each paper in your library and the audio made for you. When it is full, delete papers or audio to add more."),
       h("div", { class: "form-actions wrap" },
         h("a", { class: "btn", href: api.exportUrl, download: "listen-vault-export.zip" }, "Download my data"),
         h("a", { class: "btn", href: "/terms", "data-link": true }, "Terms and privacy"),
@@ -346,6 +353,7 @@ export function adminView(): View {
   function usersTable(users: AdminUser[]): HTMLElement {
     const rows = users.map((u) => {
       const quotaInput = h("input", { type: "number", min: 0, max: 10000000, value: u.page_quota, class: "quota-input", "aria-label": `Page quota for ${u.email}` }) as HTMLInputElement;
+      const storageInput = h("input", { type: "number", min: 0, step: 0.1, value: (u.storage_quota / 1024 ** 3).toFixed(2), class: "quota-input", "aria-label": `Storage limit in GB for ${u.email}` }) as HTMLInputElement;
       const act = async (changes: Parameters<typeof api.adminUpdateUser>[1], done: string) => {
         try {
           await api.adminUpdateUser(u.id, changes);
@@ -360,10 +368,15 @@ export function adminView(): View {
         h("td", {}, u.email, status ? h("span", { class: "hint" }, ` (${status})`) : null),
         h("td", {}, `${u.pages_used} / ${u.page_quota}`),
         h("td", {}, String(u.documents)),
+        h("td", {}, `${formatBytes(u.storage_used)} of ${formatBytes(u.storage_quota)}`),
         h("td", {}, h("span", { class: "range" }, quotaInput, h("button", {
           type: "button", class: "btn small",
           onclick: () => act({ page_quota: Number(quotaInput.value) }, "Quota saved"),
-        }, "Save"))),
+        }, "Save pages"))),
+        h("td", {}, h("span", { class: "range" }, storageInput, h("button", {
+          type: "button", class: "btn small",
+          onclick: () => act({ storage_quota_bytes: Math.round(Number(storageInput.value) * 1024 ** 3) }, "Storage limit saved"),
+        }, "Save GB"))),
         h("td", { class: "actions" },
           h("button", { type: "button", class: "btn small", onclick: () => act({ is_disabled: !u.is_disabled }, u.is_disabled ? "Account enabled" : "Account disabled") },
             u.is_disabled ? "Enable" : "Disable"),
@@ -382,7 +395,7 @@ export function adminView(): View {
     });
     return h("div", { class: "table-wrap" },
       h("table", { class: "admin-table" },
-        h("thead", {}, h("tr", {}, h("th", {}, "Account"), h("th", {}, "Pages"), h("th", {}, "Papers"), h("th", {}, "Quota"), h("th", {}, "Actions"))),
+        h("thead", {}, h("tr", {}, h("th", {}, "Account"), h("th", {}, "Pages"), h("th", {}, "Papers"), h("th", {}, "Storage"), h("th", {}, "Page quota"), h("th", {}, "Storage limit"), h("th", {}, "Actions"))),
         h("tbody", {}, ...rows)));
   }
 

@@ -72,8 +72,10 @@ Anyone can create an account on the sign-in page (unless an administrator closes
   register, and everyone is asked again when a new version is published. The terms say that the operator can
   read the PDFs uploaded (see [docs/multi-user-plan.md](docs/multi-user-plan.md) for the decisions behind them).
   The text is a draft: have it reviewed, and replace the bracketed parts, before other people register.
-- **Page quota:** each account has a page quota (300 pages by default). The pages of the papers in its
-  library count against it. An administrator changes it in the administration page.
+- **Storage and page quota:** each account has 1 GB of storage (the PDFs of its library, plus its audio) and a
+  page quota (300 pages by default). An administrator changes either limit per account. When storage is full,
+  audio stops being made until papers or audio are deleted. Existing files are measured once with
+  `docker compose exec api python -m listen.cli measure-storage`.
 - **Own library:** every account has its own library, listening progress and questions. A PDF that is added
   by several people is stored once.
 - **Download or delete:** the account page downloads the library summary and PDFs as a zip, and deletes the

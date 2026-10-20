@@ -16,7 +16,7 @@ from typing import Any
 from psycopg_pool import ConnectionPool
 from pypdf import PdfReader
 
-from .. import appsettings, embeddings, jobs, narrations
+from .. import accounts, appsettings, embeddings, jobs, narrations
 from ..config import Settings
 from ..storage import DocPaths
 from . import article, audio, boxes, chapters, embed, enrich, fetch, grobid, ocr, pdf_fallback, sentences, tagger
@@ -163,6 +163,10 @@ class Pipeline:
                                     (narration_id, idx)).fetchone()
             if made:
                 continue
+            with self.pool.connection() as conn:
+                if accounts.storage_status(conn, user_id)["remaining"] <= 0:
+                    # the chapters made so far stay playable; the rest is made once there is room
+                    raise PipelineError("Storage is full: delete papers or audio to continue making audio", False)
             engine = self._engine_for(prefs)
             segments = (overview_segments(doc, plans[0], normalizer) if idx == 0
                         else chapter_segments(plans[idx], normalizer))

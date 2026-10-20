@@ -250,6 +250,19 @@ def pages_used(conn: Connection, user_id: int) -> int:
         "WHERE le.user_id = %s", (user_id,)).fetchone()["n"])
 
 
+def storage_status(conn: Connection, user_id: int) -> dict[str, int]:
+    """Bytes the user's library takes: the PDF of each paper they hold, and the audio made for them."""
+    row = conn.execute(
+        "SELECT u.storage_quota_bytes AS quota, "
+        "(SELECT coalesce(sum(d.pdf_bytes), 0) FROM library_entries le JOIN documents d ON d.id = le.document_id "
+        " WHERE le.user_id = u.id) AS pdfs, "
+        "(SELECT coalesce(sum(nc.bytes), 0) FROM narrations n JOIN narration_chapters nc ON nc.narration_id = n.id "
+        " WHERE n.user_id = u.id) AS audio "
+        "FROM users u WHERE u.id = %s", (user_id,)).fetchone()
+    used = int(row["pdfs"]) + int(row["audio"])
+    return {"used": used, "quota": int(row["quota"]), "remaining": max(0, int(row["quota"]) - used)}
+
+
 def quota_status(conn: Connection, user: dict[str, Any]) -> dict[str, int]:
     used = pages_used(conn, user["id"])
     return {"used": used, "quota": user["page_quota"], "remaining": max(0, user["page_quota"] - used)}
