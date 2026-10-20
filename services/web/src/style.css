@@ -578,3 +578,31 @@ dialog.classifier::backdrop { background: rgb(0 0 0 / 35%); }
   .add-panel, .dropzone, .url-form { min-width: 0; max-width: 100%; box-sizing: border-box; }
   .url-form input { min-width: 0; }
 }
+
+/* Accounts: sign-in, registration, terms, account and administration pages */
+.auth-page { min-height: 100vh; display: grid; place-items: start center; padding: 48px 16px; }
+.auth-page-stack { display: grid; gap: 24px; width: min(100%, 720px); }
+.auth-card { width: min(100%, 440px); display: grid; gap: 14px; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.auth-page-stack .auth-card { width: 100%; }
+.auth-card.terms { width: 100%; }
+.auth-form { display: grid; gap: 14px; }
+.check { display: flex; gap: 10px; align-items: flex-start; }
+.check input { margin-top: 3px; }
+.form-error { margin: 0; color: var(--danger, #b3261e); }
+.terms-text { max-height: 50vh; overflow: auto; padding: 4px 12px 4px 0; line-height: 1.55; }
+.terms-text h2 { font-size: 18px; margin: 18px 0 6px; }
+.terms-text h3 { font-size: 15px; margin: 14px 0 4px; }
+.terms-text p, .terms-text li { margin: 0 0 8px; }
+.terms-notice { margin: 12px 16px 0; }
+.account-page, .admin-page { display: grid; gap: 14px; max-width: 980px; }
+.quota { max-width: 420px; }
+.btn.danger { border-color: var(--danger, #b3261e); color: var(--danger, #b3261e); }
+.table-wrap { overflow-x: auto; }
+.admin-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.admin-table th, .admin-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.admin-table td.actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.quota-input { width: 96px; }
+@media (max-width: 600px) {
+  .auth-page { padding: 24px 16px; }
+  .auth-card { padding: 18px; }
+}

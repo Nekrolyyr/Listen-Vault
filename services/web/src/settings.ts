@@ -1,6 +1,7 @@
 import { api, type Settings } from "./api";
 import { h, toast } from "./dom";
 import type { View } from "./main";
+import { session } from "./session";
 import { WPM_MAX, WPM_MIN } from "./speedread";
 
 const ACCENTS: Record<string, string> = {
@@ -95,19 +96,20 @@ export function settingsView(): View {
         h("label", { class: "field" }, h("span", {}, "Speed reading, words per minute"), h("span", { class: "range" }, wpm, wpmOut)),
         h("p", { class: "hint" }, "Speed reading shows one word at a time. It starts slower and reaches this speed after about 15 seconds."),
       ),
-      h(
-        "fieldset",
-        {},
-        h("legend", {}, "Library"),
-        h("p", { class: "hint" }, "Papers added before keywords existed have none. This finds their task, methods, datasets, topics and keywords in the background."),
-        h("button", { type: "button", class: "btn", onclick: backfill }, "Extract keywords for the library"),
-        h("p", { class: "hint" }, "Areas place each paper in a main area and up to two others, from its abstract and content. New papers are placed automatically. Choices made by hand are kept."),
-        h("div", { class: "form-actions wrap" },
-          h("button", { type: "button", class: "btn", onclick: () => classify(false) }, "Place papers in areas"),
-          h("button", { type: "button", class: "btn", onclick: () => classify(true) }, "Place all papers again"),
-          h("button", { type: "button", class: "btn", onclick: rebuildTopics }, "Rebuild topics"),
-        ),
-      ),
+      // These change the papers of every user, so only an administrator sees them.
+      ...(session?.is_admin ? [h(
+          "fieldset",
+          {},
+          h("legend", {}, "Library"),
+          h("p", { class: "hint" }, "Papers added before keywords existed have none. This finds their task, methods, datasets, topics and keywords in the background."),
+          h("button", { type: "button", class: "btn", onclick: backfill }, "Extract keywords for the library"),
+          h("p", { class: "hint" }, "Areas place each paper in a main area and up to two others, from its abstract and content. New papers are placed automatically. Choices made by hand are kept."),
+          h("div", { class: "form-actions wrap" },
+            h("button", { type: "button", class: "btn", onclick: () => classify(false) }, "Place papers in areas"),
+            h("button", { type: "button", class: "btn", onclick: () => classify(true) }, "Place all papers again"),
+            h("button", { type: "button", class: "btn", onclick: rebuildTopics }, "Rebuild topics"),
+          ),
+        )] : []),
       h("p", { class: "hint" }, "Changes apply to newly added documents. For existing ones, choose “Regenerate audio” in the library."),
       h("div", { class: "form-actions" }, h("button", { type: "submit", class: "btn primary" }, "Save settings")),
     );
@@ -180,14 +182,14 @@ export function settingsView(): View {
   }
 
   api.settings().then(render, (e) => toast((e as Error).message, "error"));
-  loadZotero();
+  if (session?.is_admin) loadZotero();
   return {
     el: h(
       "section",
       { class: "settings" },
       h("h1", {}, "Settings"),
       form,
-      zoteroBox,
+      session?.is_admin ? zoteroBox : null,
     ),
     title: "Settings",
   };

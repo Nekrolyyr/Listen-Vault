@@ -1,6 +1,36 @@
-// Typed client for the listen-vault api. All requests go through the login proxy (Caddy in
-// docker-compose.yml). When the login is missing or has expired, the proxy answers with a login
-// prompt instead of JSON, so we reload the page and the browser asks again.
+// Typed client for the listen-vault api. Requests carry the session cookie. When the session is missing or
+// has expired the api answers 401, and the browser goes to the sign-in page.
+
+/** The signed-in account, as /api/me and the sign-in answer describe it. */
+export interface Me {
+  id: number;
+  email: string;
+  is_admin: boolean;
+  quota: { used: number; quota: number; remaining: number };
+  terms: { current: string | null; accepted: boolean };
+}
+
+export interface AdminUser {
+  id: number;
+  email: string;
+  is_admin: boolean;
+  is_disabled: boolean;
+  verified: boolean;
+  page_quota: number;
+  pages_used: number;
+  documents: number;
+  created_at: string;
+  last_login_at: string | null;
+}
+
+export interface AuditRow {
+  id: number;
+  action: string;
+  target_user_id: number | null;
+  detail: Record<string, unknown>;
+  created_at: string;
+  actor: string | null;
+}
 
 export interface Job {
   state: "queued" | "running" | "done" | "failed";
@@ -294,9 +324,20 @@ export function filterQuery(f: Filters): string {
   return p.toString();
 }
 
+/** Pages that work without a session. */
+export const PUBLIC_PATHS = ["/login", "/register", "/verify", "/terms"];
+
 export function toLogin(): never {
-  window.location.reload();
-  throw new ApiError(401, "Signing in…");
+  if (!PUBLIC_PATHS.includes(window.location.pathname)) window.location.assign("/login");
+  throw new ApiError(401, "Sign in to continue");
+}
+
+/** The message for an error answer: a string detail, or the message of a structured one. */
+function detailOf(data: unknown, fallback: string): string {
+  const detail = (data as { detail?: unknown } | null)?.detail;
+  if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object" && "message" in detail) return String((detail as { message: unknown }).message);
+  return fallback;
 }
 
 async function request<T>(method: string, path: string, body?: unknown, keepalive = false): Promise<T> {
@@ -308,17 +349,18 @@ async function request<T>(method: string, path: string, body?: unknown, keepaliv
   }
   const res = await fetch(path, init);
   const type = res.headers.get("content-type") ?? "";
-  if (res.status === 401 || (res.ok && res.status !== 204 && !type.includes("json"))) toLogin();
+  // the sign-in calls report their own refusals (wrong password, closed registration)
+  if ((res.status === 401 && !path.startsWith("/api/auth/")) || (res.ok && res.status !== 204 && !type.includes("json"))) toLogin();
   if (!res.ok) {
     let detail = res.statusText;
     try {
-      const data = await res.json();
-      detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+      detail = detailOf(await res.json(), detail);
     } catch {
       /* not json */
     }
     throw new ApiError(res.status, detail);
   }
+  if (res.status === 204) return undefined as T;
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
 
@@ -359,7 +401,28 @@ export const api = {
   zoteroQueueAll: () => request<{ queued: number }>("POST", "/api/zotero/queue-all"),
   settings: () => request<Settings>("GET", "/api/settings"),
   saveSettings: (changes: Partial<Settings["values"]>) => request<Settings>("PUT", "/api/settings", changes),
-  me: () => request<{ user: string; logout_url: string }>("GET", "/api/me"),
+  me: () => request<Me>("GET", "/api/me"),
+  register: (body: { email: string; password: string; accept_terms: boolean }) =>
+    request<({ status: "ok" } & Me) | { status: "verify_email"; email: string }>("POST", "/api/auth/register", body),
+  login: (body: { email: string; password: string }) => request<{ status: "ok" } & Me>("POST", "/api/auth/login", body),
+  logout: () => request<{ ok: boolean }>("POST", "/api/auth/logout"),
+  verify: (token: string) => request<{ ok: boolean }>("POST", "/api/auth/verify", { token }),
+  changePassword: (current: string, next: string) =>
+    request<{ ok: boolean }>("POST", "/api/auth/password", { current, new: next }),
+  terms: () => request<{ version: string | null; text: string }>("GET", "/api/terms"),
+  acceptTerms: (version: string) => request<{ ok: boolean }>("POST", "/api/terms/accept", { version }),
+  deleteAccount: (password: string) => request<void>("DELETE", "/api/account", { password }),
+  /** A link, not a request: the browser downloads the zip. */
+  exportUrl: "/api/account/export",
+  adminUsers: () => request<AdminUser[]>("GET", "/api/admin/users"),
+  adminUpdateUser: (id: number, changes: { page_quota?: number; is_disabled?: boolean; is_admin?: boolean }) =>
+    request<unknown>("PATCH", `/api/admin/users/${id}`, changes),
+  adminRevokeSessions: (id: number) => request<{ revoked: number }>("POST", `/api/admin/users/${id}/sessions/revoke`),
+  adminRegistration: () => request<{ open: boolean; email_verification: boolean }>("GET", "/api/admin/registration"),
+  adminSetRegistration: (open: boolean) =>
+    request<{ open: boolean; email_verification: boolean }>("PUT", "/api/admin/registration", { open }),
+  adminAudit: () => request<AuditRow[]>("GET", "/api/admin/audit?limit=50"),
+  adminStats: () => request<Record<string, number>>("GET", "/api/admin/stats"),
   audioUrl: (id: string, idx: number) => `/api/documents/${id}/chapters/${idx}/audio`,
   pdfUrl: (id: string) => `/api/documents/${id}/pdf`,
 
@@ -375,7 +438,7 @@ export const api = {
         if (xhr.status === 401 || !type.includes("json")) toLogin();
         const data = JSON.parse(xhr.responseText || "{}");
         if (xhr.status >= 200 && xhr.status < 300) resolve(data as Doc);
-        else reject(new ApiError(xhr.status, data.detail ?? xhr.statusText));
+        else reject(new ApiError(xhr.status, detailOf(data, xhr.statusText)));
       };
       xhr.onerror = () => reject(new ApiError(0, "Upload failed — check your connection"));
       const form = new FormData();

@@ -4,6 +4,7 @@ import { openClassifier } from "./actions";
 import { addToggle, bar, chip, dot, link, paperList } from "./components";
 import { h, toast } from "./dom";
 import { navigate, type View } from "./main";
+import { session } from "./session";
 
 const REASON_TONE: Record<string, "bad" | "wait" | "progress"> = { failed: "bad", "no area yet": "wait", "low confidence": "progress" };
 
@@ -98,14 +99,17 @@ export function homeView(): View {
           "div",
           { class: "notice" },
           h("span", {}, `${o.unplaced} ${o.unplaced === 1 ? "paper has" : "papers have"} no area yet.`),
-          h("button", { type: "button", class: "btn small", onclick: async () => {
-            try {
-              const { queued } = await api.classify(false);
-              toast(queued ? "Placing the papers in areas. The map updates as they are done." : "Already being placed.");
-            } catch (e) {
-              toast((e as Error).message, "error");
-            }
-          } }, "Place them now"),
+          // placing papers in areas changes them for every user, so only an administrator starts it
+          session?.is_admin
+            ? h("button", { type: "button", class: "btn small", onclick: async () => {
+              try {
+                const { queued } = await api.classify(false);
+                toast(queued ? "Placing the papers in areas. The map updates as they are done." : "Already being placed.");
+              } catch (e) {
+                toast((e as Error).message, "error");
+              }
+            } }, "Place them now")
+            : h("span", { class: "hint" }, "An administrator places them."),
         ),
       );
     }
