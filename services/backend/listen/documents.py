@@ -29,18 +29,19 @@ def in_library(conn: Connection, user_id: int, document_id: UUID | str) -> bool:
                         (user_id, document_id)).fetchone() is not None
 
 
-def remove_entry(conn: Connection, user_id: int, document_id: UUID | str, docs_dir: Path) -> bool:
-    """Take a document out of a user's library. Returns False when it was not there."""
+def remove_entry(conn: Connection, user_id: int, document_id: UUID | str) -> tuple[bool, list[str]]:
+    """Take a document out of a user's library. Returns (False, []) when it was not there, otherwise (True, ids of
+    the documents nobody holds any more). Their files are removed by delete_files, after the transaction commits."""
     cur = conn.execute("DELETE FROM library_entries WHERE user_id = %s AND document_id = %s",
                        (user_id, document_id))
     if cur.rowcount == 0:
-        return False
-    purge_orphans(conn, docs_dir, document_id)
-    return True
+        return False, []
+    return True, purge_orphans(conn, document_id)
 
 
-def purge_orphans(conn: Connection, docs_dir: Path, only: UUID | str | None = None) -> list[str]:
-    """Delete documents that no library holds any more, with their files. Returns the ids deleted."""
+def purge_orphans(conn: Connection, only: UUID | str | None = None) -> list[str]:
+    """Delete the documents no library holds (only the given one, if one is given). Returns their ids. Their files
+    are not touched here: call delete_files once the transaction has committed."""
     if only is not None:
         rows = conn.execute("DELETE FROM documents d WHERE d.id = %s AND NOT EXISTS "
                             "(SELECT 1 FROM library_entries le WHERE le.document_id = d.id) RETURNING d.id",
@@ -48,9 +49,11 @@ def purge_orphans(conn: Connection, docs_dir: Path, only: UUID | str | None = No
     else:
         rows = conn.execute("DELETE FROM documents d WHERE NOT EXISTS "
                             "(SELECT 1 FROM library_entries le WHERE le.document_id = d.id) RETURNING d.id").fetchall()
-    ids = [str(r["id"]) for r in rows]
+    return [str(r["id"]) for r in rows]
+
+
+def delete_files(docs_dir: Path, ids: list[str]) -> None:
     for doc_id in ids:
         DocPaths(docs_dir, doc_id).remove()
     if ids:
         log.info("removed %d document(s) no library holds", len(ids))
-    return ids

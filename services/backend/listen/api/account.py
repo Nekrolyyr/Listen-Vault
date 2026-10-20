@@ -230,6 +230,7 @@ def register_account_routes(app: FastAPI, settings: config.Settings) -> None:
             if user["is_admin"] and accounts.admin_count(conn) <= 1:
                 raise HTTPException(409, "You are the only administrator. Make another account an administrator first.")
             conn.execute("DELETE FROM users WHERE id = %s", (user["id"],))
-            documents.purge_orphans(conn, settings.docs_dir)
+            orphans = documents.purge_orphans(conn)
+        documents.delete_files(settings.docs_dir, orphans)
         response.delete_cookie(SESSION_COOKIE, path="/")
         log.info("account %s deleted", user["id"])

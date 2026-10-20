@@ -815,8 +815,10 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
     def delete_document(request: Request, doc_id: UUID):
         """Take the paper out of the user's library. The stored copy is deleted when no library holds it."""
         with pool(request).connection() as conn, conn.transaction():
-            if not documents.remove_entry(conn, uid(request), doc_id, settings.docs_dir):
-                raise HTTPException(404, "Document not found")
+            removed, orphans = documents.remove_entry(conn, uid(request), doc_id)
+        if not removed:
+            raise HTTPException(404, "Document not found")
+        documents.delete_files(settings.docs_dir, orphans)
 
     @app.post("/api/documents/{doc_id}/rerun", status_code=202)
     def rerun(request: Request, doc_id: UUID, body: RerunIn = Body(default_factory=RerunIn)):
