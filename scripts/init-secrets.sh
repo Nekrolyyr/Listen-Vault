@@ -18,10 +18,9 @@ set_env() {  # set_env KEY VALUE: fills KEY in .env only when it is empty
 }
 rand() { od -An -vtx1 -N24 /dev/urandom | tr -d ' \n'; }
 
-set_env LISTEN_USER "$(id -un)"
 set_env LISTEN_PROXY_SECRET "$(rand)"
 set_env POSTGRES_PASSWORD "$(rand)"
 
 # Created here, not by docker, so they belong to you and not to root.
 mkdir -p data/library data/postgres models config/caddy
-echo "Done. Next: scripts/add-user.sh (sets the login password), then scripts/fetch-models.sh"
+echo "Done. Next: scripts/make-admin.sh you@example.org (the first administrator), then scripts/fetch-models.sh"

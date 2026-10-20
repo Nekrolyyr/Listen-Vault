@@ -1,11 +1,9 @@
-# Local reverse proxy for the api. It asks for the login (users.caddy, written by scripts/add-user.sh),
-# then passes the user on to the api in the Remote-User header. The api rejects requests without the
-# shared X-Listen-Proxy secret, so only this proxy can reach it.
+# Local reverse proxy for the api and the web app. Sign-in is the api's job (accounts with a session cookie).
+# Caddy adds the shared X-Listen-Proxy secret, so only this proxy can reach the api, and it sets the client
+# address itself, so a client cannot pretend to come from another address (rate limits use it).
 http://:8080 {
-	import /etc/caddy/users.caddy
-
 	reverse_proxy api:8000 {
-		header_up Remote-User {http.auth.user.id}
 		header_up X-Listen-Proxy {$LISTEN_PROXY_SECRET}
+		header_up X-Forwarded-For {remote_host}
 	}
 }

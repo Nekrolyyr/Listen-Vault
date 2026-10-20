@@ -1,14 +1,15 @@
-# listen-vault for localhost. Open http://localhost:8080 (LISTEN_PORT) and sign in with LISTEN_USER and the
-# password set by scripts/add-user.sh. See README.md for the first start.
+# listen-vault for localhost. Open http://localhost:8080 (LISTEN_PORT), register, and confirm the account by
+# email (if SMTP is configured). The first administrator is made with scripts/make-admin.sh.
+# See README.md for the first start.
 #
 # Everything lives in this folder (git-ignored):
 #   ./data/library    documents, text and audio   -> /data
 #   ./data/postgres   database files              -> /var/lib/postgresql/data
 #   ./models          model files                 -> /models (read-only for llm and worker)
-#   ./config/caddy/users.caddy   login written by scripts/add-user.sh
+#   ./config/terms    the terms of service (read-only for the api)
 #
-# Only caddy publishes a port, and only on 127.0.0.1. Caddy asks for the login and passes the user on to
-# the api, which accepts requests only with that header and the shared LISTEN_PROXY_SECRET.
+# Only caddy publishes a port, and only on 127.0.0.1. Caddy passes requests to the api with the shared
+# LISTEN_PROXY_SECRET; the api serves data only to a signed-in account.
 
 x-backend-env: &backend-env
   DATABASE_URL: postgresql://listen:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/listen
@@ -32,7 +33,6 @@ services:
       - "127.0.0.1:${LISTEN_PORT:-8080}:8080"
     volumes:
       - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./config/caddy/users.caddy:/etc/caddy/users.caddy:ro
 
   api:
     build:
@@ -47,11 +47,18 @@ services:
         condition: service_healthy
     environment:
       <<: *backend-env
-      LISTEN_USER: ${LISTEN_USER:?set LISTEN_USER in .env}
       LISTEN_PROXY_SECRET: ${LISTEN_PROXY_SECRET:?set LISTEN_PROXY_SECRET in .env}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      TERMS_DIR: /app/config/terms
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
     volumes:
       - ./data/library:/data
+      - ./config/terms:/app/config/terms:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=4)"]
       interval: 30s
