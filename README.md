@@ -79,6 +79,10 @@ Anyone can create an account on the sign-in page (unless an administrator closes
 - **Download or delete:** the account page downloads the library summary and PDFs as a zip, and deletes the
   account. Papers that no other library holds are deleted with it.
 
+**Topics** are rebuilt every day at 11:00 (`TZ`, editable in the administration page), when a paper has finished
+since the last rebuild. Areas are placed as papers finish. The administration page's Maintenance section starts
+the other tasks by hand and shows when each last ran.
+
 **Administrators** (the Admin link) see the accounts with their counts (never the titles of papers), change
 quotas, disable accounts, make other administrators, sign out an account everywhere, close or open sign-up, and
 read a log of these changes. Library-wide maintenance (areas, topics, keywords) is done by an

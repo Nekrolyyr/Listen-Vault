@@ -109,14 +109,14 @@ def test_keywords_backfill_queues_ready_documents_without_keywords(client, setti
     with psycopg.connect(settings.database_url, autocommit=True) as conn:
         conn.execute("UPDATE documents SET status = 'ready' WHERE id = %s", (doc_id,))
         conn.execute("UPDATE jobs SET state = 'done'")
-    assert client.post("/api/library/keywords/backfill", headers=AUTH).json() == {"queued": 1}
+    assert client.post("/api/admin/maintenance/keywords", headers=AUTH).json() == {"queued": 1}
     with psycopg.connect(settings.database_url, autocommit=True) as conn:
         options = conn.execute("SELECT options FROM jobs WHERE state = 'queued'").fetchone()[0]
         assert options == {"from": "enrich"}
         conn.execute("INSERT INTO document_keywords (document_id, kind, term, source) VALUES (%s, 'topic', 'sleep', 'llm')",
                      (doc_id,))
     # already has keywords and an open job: nothing more to queue
-    assert client.post("/api/library/keywords/backfill", headers=AUTH).json() == {"queued": 0}
+    assert client.post("/api/admin/maintenance/keywords", headers=AUTH).json() == {"queued": 0}
     detail = client.get(f"/api/documents/{doc_id}", headers=AUTH).json()
     assert detail["keywords"]["topic"] == ["sleep"] and detail["keywords"]["task"] == []
 
@@ -248,8 +248,8 @@ def test_timeline_and_topics(client, settings):
     assert client.get("/api/library/timeline", headers=AUTH).status_code == 422
     assert client.get("/api/library/timeline?topic=999", headers=AUTH).status_code == 404
 
-    assert client.post("/api/library/topics/rebuild", headers=AUTH).json() == {"queued": True}
-    assert client.post("/api/library/topics/rebuild", headers=AUTH).json() == {"queued": False}
+    assert client.post("/api/admin/maintenance/topics", headers=AUTH).json() == {"queued": True}
+    assert client.post("/api/admin/maintenance/topics", headers=AUTH).json() == {"queued": False}
     with psycopg.connect(settings.database_url, autocommit=True) as conn:
         topic_id = conn.execute("INSERT INTO topics (name, terms, paper_count) VALUES "
                                 "('Sleep and memory', '{sleep,memory}', 4) RETURNING id").fetchone()[0]

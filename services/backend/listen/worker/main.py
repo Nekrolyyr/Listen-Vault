@@ -7,7 +7,7 @@ import socket
 import time
 from uuid import UUID
 
-from .. import config, db, jobs
+from .. import config, db, jobs, maintenance
 from ..storage import DocPaths
 from . import classify, qa, topics
 from .fetch import FetchError
@@ -20,6 +20,7 @@ log = logging.getLogger("listen.worker")
 IDLE_SLEEP_S = 3
 ORPHAN_SWEEP_S = 3600
 AREAS_CHECK_S = 60
+TOPICS_CHECK_S = 60  # the daily topic rebuild is checked once a minute
 
 
 class Worker:
@@ -87,6 +88,12 @@ class Worker:
             retry = jobs.fail(conn, job, message, retryable)
         log.warning("job %s %s: %s", job["id"], "will be retried" if retry else "failed", message)
 
+    def schedule_topics(self) -> None:
+        """The daily topic rebuild, when it is due and a paper finished since the last one (see maintenance.py)."""
+        with self.pool.connection() as conn, conn.transaction():
+            if maintenance.schedule_topics(conn, self.settings.timezone):
+                log.info("topic rebuild queued")
+
     def schedule_areas(self) -> None:
         """Place papers that have no research area yet (new imports, new uploads)."""
         with self.pool.connection() as conn, conn.transaction():
@@ -114,11 +121,15 @@ class Worker:
     def loop(self) -> None:
         last_sweep = 0.0
         last_areas: float | None = None
+        last_topics = 0.0
         while not self.stopping:
             if time.monotonic() - last_sweep > ORPHAN_SWEEP_S:
                 if n := self.sweep_orphans():
                     log.info("removed %d orphaned document folders", n)
                 last_sweep = time.monotonic()
+            if time.monotonic() - last_topics >= TOPICS_CHECK_S:
+                last_topics = time.monotonic()
+                self.schedule_topics()
             if last_areas is None or time.monotonic() - last_areas >= AREAS_CHECK_S:
                 last_areas = time.monotonic()
                 self.schedule_areas()

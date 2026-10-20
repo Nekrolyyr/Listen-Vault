@@ -1,5 +1,5 @@
 // Sign-in, registration, email confirmation, the terms, the account page and the administration console.
-import { api, type AdminUser, type AuditRow, type Me } from "./api";
+import { api, type AdminUser, type AuditRow, type MaintenanceStatus, type MaintenanceTask, type Me } from "./api";
 import { bar, crumbs } from "./components";
 import { h, toast } from "./dom";
 import type { View } from "./main";
@@ -252,14 +252,15 @@ export function adminView(): View {
 
   async function load(): Promise<void> {
     try {
-      const [users, reg, stats, audit] = await Promise.all([
-        api.adminUsers(), api.adminRegistration(), api.adminStats(), api.adminAudit(),
+      const [users, reg, stats, audit, maintenance] = await Promise.all([
+        api.adminUsers(), api.adminRegistration(), api.adminStats(), api.adminAudit(), api.maintenance(),
       ]);
       root.replaceChildren(
         crumbs(["Library", "/"], ["Administration"]),
         h("h1", {}, "Administration"),
         statsLine(stats),
         registrationBox(reg.open, reg.email_verification),
+        maintenanceBox(maintenance),
         h("h2", {}, "Accounts"),
         h("p", { class: "hint" }, "Counts only: this page does not show the titles of anyone's papers."),
         usersTable(users),
@@ -296,6 +297,49 @@ export function adminView(): View {
           }
         },
       }, "Save"),
+    );
+  }
+
+  function maintenanceBox(m: MaintenanceStatus): HTMLElement {
+    const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : "never");
+    const time = h("input", { type: "time", value: m.rebuild_at, "aria-label": "Daily topic rebuild time" }) as HTMLInputElement;
+    const run = async (task: MaintenanceTask) => {
+      try {
+        const res = await api.runMaintenance(task);
+        const queued = res.queued === true || (typeof res.queued === "number" && res.queued > 0);
+        toast(queued ? "Started." : "Already waiting or nothing to do.");
+        void load();
+      } catch (err) {
+        toast((err as Error).message, "error");
+      }
+    };
+    return h("fieldset", { class: "settings-form" },
+      h("legend", {}, "Maintenance"),
+      h("p", { class: "hint" },
+        `Topics are rebuilt every day at ${m.rebuild_at} (${m.timezone}) when a paper has finished since the last rebuild. `,
+        `Last rebuild: ${when(m.last_run)}. Next check: ${new Date(m.next_run).toLocaleString()}.`,
+        m.papers_waiting ? " New papers are waiting." : ""),
+      h("label", { class: "field" }, h("span", {}, "Daily rebuild time"),
+        h("span", { class: "range" }, time, h("button", {
+          type: "button", class: "btn small",
+          onclick: async () => {
+            try {
+              await api.setRebuildTime(time.value);
+              toast(`Topics will be rebuilt at ${time.value}`);
+              void load();
+            } catch (err) {
+              toast((err as Error).message, "error");
+            }
+          },
+        }, "Save"))),
+      h("div", { class: "table-wrap" },
+        h("table", { class: "admin-table" },
+          h("thead", {}, h("tr", {}, h("th", {}, "Task"), h("th", {}, "Last run"), h("th", {}, ""))),
+          h("tbody", {}, ...m.tasks.map((t) => h("tr", {},
+            h("td", {}, t.label),
+            h("td", {}, when(t.last_run)),
+            h("td", {}, h("button", { type: "button", class: "btn small", onclick: () => run(t.id) }, "Run now")))))),
+      ),
     );
   }
 

@@ -1,6 +1,17 @@
 // Typed client for the listen-vault api. Requests carry the session cookie. When the session is missing or
 // has expired the api answers 401, and the browser goes to the sign-in page.
 
+export type MaintenanceTask = "areas" | "areas_all" | "keywords" | "topics";
+
+export interface MaintenanceStatus {
+  rebuild_at: string;
+  timezone: string;
+  next_run: string;
+  last_run: string | null;
+  papers_waiting: boolean;
+  tasks: { id: MaintenanceTask; label: string; last_run: string | null }[];
+}
+
 /** The signed-in account, as /api/me and the sign-in answer describe it. */
 export interface Me {
   id: number;
@@ -362,10 +373,11 @@ export const api = {
   topic: (id: number) => request<TopicPage>("GET", `/api/library/topics/${id}`),
   classification: (id: string, body: ClassificationIn) =>
     request<Doc>("PATCH", `/api/documents/${id}/classification`, body),
-  classify: (force: boolean) => request<{ queued: boolean }>("POST", `/api/library/classify?force=${force}`),
+  maintenance: () => request<MaintenanceStatus>("GET", "/api/admin/maintenance"),
+  runMaintenance: (task: MaintenanceTask) => request<{ queued: number | boolean }>("POST", `/api/admin/maintenance/${task}`),
+  setRebuildTime: (time: string) => request<{ rebuild_at: string }>("PUT", "/api/admin/maintenance/rebuild-time", { time }),
   graph: (f: Filters) => request<Graph>("GET", `/api/library/graph?${filterQuery(f)}`),
   topics: () => request<Topic[]>("GET", "/api/library/topics"),
-  rebuildTopics: () => request<{ queued: boolean }>("POST", "/api/library/topics/rebuild"),
   timeline: (sel: { topic: number } | { term: string }) =>
     request<Timeline>("GET", `/api/library/timeline?${"topic" in sel ? `topic=${sel.topic}` : `term=${encodeURIComponent(sel.term)}`}`),
   document: (id: string) => request<DocDetail>("GET", `/api/documents/${id}`),
@@ -380,7 +392,6 @@ export const api = {
   playback: (id: string) => request<Playback>("GET", `/api/documents/${id}/playback`),
   savePlayback: (id: string, p: Playback, keepalive = false) =>
     request<{ ok: boolean }>("PUT", `/api/documents/${id}/playback`, p, keepalive),
-  backfillKeywords: () => request<{ queued: number }>("POST", "/api/library/keywords/backfill"),
   questions: (id: string) => request<Question[]>("GET", `/api/documents/${id}/questions`),
   related: (id: string) => request<{ papers: RelatedPaper[] }>("GET", `/api/documents/${id}/related`),
   ask: (id: string, question: string) => request<Question>("POST", `/api/documents/${id}/questions`, { question }),

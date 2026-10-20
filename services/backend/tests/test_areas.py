@@ -188,6 +188,6 @@ def test_map_area_topic_and_classification_endpoints(client, settings):
                  json={"primary": "politics", "also": [], "topics": {"Head pruning": True}})
     assert titles(f"/api/documents?topic={topic_id}") == ["Head pruning", "Pruning again"]
 
-    assert client.post("/api/library/classify", headers=AUTH).json() == {"queued": True}
-    assert client.post("/api/library/classify", headers=AUTH).json() == {"queued": False}
-    assert client.post("/api/library/classify?force=true", headers=AUTH).json() == {"queued": False}
+    assert client.post("/api/admin/maintenance/areas", headers=AUTH).json() == {"queued": True}
+    assert client.post("/api/admin/maintenance/areas", headers=AUTH).json() == {"queued": False}
+    assert client.post("/api/admin/maintenance/areas_all", headers=AUTH).json() == {"queued": False}

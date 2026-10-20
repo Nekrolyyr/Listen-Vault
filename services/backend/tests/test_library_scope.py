@@ -179,10 +179,10 @@ def test_each_user_has_a_few_papers_waiting_at_most(make_client, settings):
 
 def test_library_wide_actions_are_for_administrators(make_client):
     ann = make_client("ann@example.org")
-    assert ann.post("/api/library/classify", headers=AUTH).status_code == 403
-    assert ann.post("/api/library/topics/rebuild", headers=AUTH).status_code == 403
-    assert ann.post("/api/library/keywords/backfill", headers=AUTH).status_code == 403
+    assert ann.post("/api/admin/maintenance/areas", headers=AUTH).status_code == 403
+    assert ann.post("/api/admin/maintenance/topics", headers=AUTH).status_code == 403
+    assert ann.post("/api/admin/maintenance/keywords", headers=AUTH).status_code == 403
     assert ann.get("/api/library/review", headers=AUTH).status_code == 403
     assert ann.get("/api/admin/users", headers=AUTH).status_code == 403
     root = make_client("root@example.org", admin=True)
-    assert root.post("/api/library/topics/rebuild", headers=AUTH).json() == {"queued": True}
+    assert root.post("/api/admin/maintenance/topics", headers=AUTH).json() == {"queued": True}

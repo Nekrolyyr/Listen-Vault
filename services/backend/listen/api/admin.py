@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from .. import accounts, config
+from .. import accounts, config, jobs, maintenance
 from .deps import admin_only, pool
 
 
@@ -20,6 +20,10 @@ USER_FIELD_SQL = {
     "is_disabled": "UPDATE users SET is_disabled = %s WHERE id = %s",
     "is_admin": "UPDATE users SET is_admin = %s WHERE id = %s",
 }
+
+
+class RebuildTimeIn(BaseModel):
+    time: str = Field(max_length=5)
 
 
 class RegistrationIn(BaseModel):
@@ -117,3 +121,47 @@ def register_admin_routes(app: FastAPI, settings: config.Settings) -> None:
                 "(SELECT count(*) FROM jobs WHERE state IN ('queued', 'running')) AS open_jobs, "
                 "(SELECT count(DISTINCT user_id) FROM sessions WHERE expires_at > now()) AS signed_in").fetchone()
         return {k: int(v) for k, v in row.items()}
+
+    # ------------------------------------------------------------------ maintenance
+    @app.get("/api/admin/maintenance")
+    def maintenance_status(request: Request):
+        admin_only(request)
+        with pool(request).connection() as conn:
+            return maintenance.status(conn, settings.timezone)
+
+    @app.post("/api/admin/maintenance/{task}", status_code=202)
+    def run_maintenance(request: Request, task: str):
+        """Start a library-wide task now. The same tasks run on their own (areas when a paper is ready, topics daily)."""
+        actor = admin_only(request)
+        if task not in maintenance.TASKS:
+            raise HTTPException(404, "Unknown maintenance task")
+        with pool(request).connection() as conn, conn.transaction():
+            if task == "topics":
+                queued = maintenance.queue_topics(conn, actor["id"])
+            elif task in ("areas", "areas_all"):
+                queued = jobs.enqueue_library(conn, "areas", {"force": task == "areas_all"}, user_id=actor["id"]) is not None
+                if queued:
+                    maintenance.record_run(conn, task)
+            else:  # keywords: ready papers that have none yet
+                ids = [r["id"] for r in conn.execute(
+                    "SELECT d.id FROM documents d WHERE d.status = 'ready' "
+                    "AND NOT EXISTS (SELECT 1 FROM document_keywords k WHERE k.document_id = d.id) "
+                    "AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.document_id = d.id AND j.state IN ('queued', 'running'))")]
+                for doc_id in ids:
+                    jobs.enqueue(conn, doc_id, {"from": "enrich"}, user_id=actor["id"])
+                maintenance.record_run(conn, task)
+                return {"queued": len(ids)}
+        return {"queued": queued}
+
+    @app.put("/api/admin/maintenance/rebuild-time")
+    def set_rebuild_time(request: Request, body: RebuildTimeIn):
+        actor = admin_only(request)
+        try:
+            at = maintenance.parse_time(body.time)
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from e
+        with pool(request).connection() as conn, conn.transaction():
+            maintenance.set_value(conn, "topics_rebuild_at", at.strftime("%H:%M"))
+            accounts.audit(conn, actor["id"], "maintenance.rebuild_time", None, {"time": at.strftime("%H:%M")})
+        return {"rebuild_at": at.strftime("%H:%M")}
+

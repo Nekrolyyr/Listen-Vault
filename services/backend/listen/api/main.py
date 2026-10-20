@@ -485,14 +485,6 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
                          "WHERE dt.topic_id = t.id)")
             return _doc_out(get_doc(conn, doc_id, uid(request)))
 
-    @app.post("/api/library/classify", status_code=202)
-    def classify_library(request: Request, force: bool = False):
-        """Place the papers in research areas. Library-wide, so administrators only."""
-        admin_only(request)
-        with pool(request).connection() as conn, conn.transaction():
-            job = jobs.enqueue_library(conn, "areas", {"force": force}, user_id=uid(request))
-        return {"queued": job is not None}
-
     @app.get("/api/library/topics")
     def library_topics(request: Request):
         with pool(request).connection() as conn:
@@ -504,13 +496,6 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
         out = [{"id": r["id"], "name": r["name"], "terms": list(r["terms"]), "area": r["area"],
                 "documents": r["documents"]} for r in rows]
         return sorted(out, key=lambda t: (-t["documents"], t["name"]))
-
-    @app.post("/api/library/topics/rebuild", status_code=202)
-    def rebuild_topics(request: Request):
-        admin_only(request)
-        with pool(request).connection() as conn, conn.transaction():
-            job = jobs.enqueue_library(conn, "topics", user_id=uid(request))
-        return {"queued": job is not None}
 
     @app.get("/api/library/timeline")
     def library_timeline(request: Request, topic: int | None = None, term: str | None = Query(None, max_length=80)):
@@ -718,20 +703,6 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
                 (doc_id, body.question.strip(), uid(request))).fetchone()
             jobs.enqueue_question(conn, doc_id, question["id"], uid(request))
         return _question_out(question)
-
-    @app.post("/api/library/keywords/backfill", status_code=202)
-    def backfill_keywords(request: Request):
-        """Queue keyword extraction for ready papers that have no keywords yet (e.g. from before it existed)."""
-        admin_only(request)
-        with pool(request).connection() as conn, conn.transaction():
-            ids = [r["id"] for r in conn.execute(
-                "SELECT d.id FROM documents d WHERE d.status = 'ready' "
-                "AND NOT EXISTS (SELECT 1 FROM document_keywords k WHERE k.document_id = d.id) "
-                "AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.document_id = d.id AND j.state IN ('queued', 'running'))"
-            )]
-            for doc_id in ids:
-                jobs.enqueue(conn, doc_id, {"from": "enrich"}, user_id=uid(request))
-        return {"queued": len(ids)}
 
     # ------------------------------------------------------------------ changing and removing
     @app.patch("/api/documents/{doc_id}")

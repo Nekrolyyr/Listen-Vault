@@ -40,6 +40,7 @@ class Settings:
     topics_mode: str = "embeddings"     # embeddings (paper clusters) | keywords (keyword clusters)
     qa_retrieval: str = "bm25"          # hybrid (BM25 + passage vectors) | bm25 (hybrid untested on a discriminating set)
     openalex_email: str = ""            # set to look up OpenAlex topics; titles are sent, nothing else
+    timezone: str = "UTC"               # TZ: the daily topic rebuild runs at its time in this zone
 
     @property
     def docs_dir(self) -> Path:
@@ -91,6 +92,7 @@ def load() -> Settings:
         topics_mode=_choice(env, "TOPICS_MODE", "embeddings", ("embeddings", "keywords")),
         qa_retrieval=_choice(env, "QA_RETRIEVAL", "bm25", ("hybrid", "bm25")),
         openalex_email=env.get("OPENALEX_EMAIL", "").strip(),
+        timezone=env.get("TZ", "").strip() or "UTC",
     )
 
 
