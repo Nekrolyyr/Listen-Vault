@@ -47,7 +47,7 @@ areas, ask and topics are proposals (`reviewed: false`) and the sets are small: 
 
 ## Operations
 
-- Production stack: `compose.yaml` (private, gitignored) and the tracked `docker-compose.yml` carry the same settings.
+- Production stack: `compose.yaml` (private, gitignored) and the tracked `compose.template.yml` carry the same settings.
 - Migrations 009–012 are applied to the production database. A topics rebuild was queued and ran (94 vectors, 7 topics).
 - Existing papers keep their keywords from the BLOOMZ run. To re-extract them with the typed extractor, use the
   backfill action or rerun with `from=enrich`; this takes about 20 s per paper on the GPU.

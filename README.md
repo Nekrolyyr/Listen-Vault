@@ -30,8 +30,8 @@ Run these from the project folder.
    ```sh
    scripts/init-secrets.sh
    ```
-   This copies `.env.template` to `.env`, generates `LISTEN_PROXY_SECRET` and `POSTGRES_PASSWORD`, and
-   creates `data/`. Open `.env` to change anything else (the public address, mail, the time zone, CPU threads).
+   This copies `.env.template` to `.env` and `compose.template.yml` to `compose.yaml` (both git-ignored), generates
+   `LISTEN_PROXY_SECRET` and `POSTGRES_PASSWORD`, and creates `data/`. Open `.env` to change anything else (the public address, mail, the time zone, CPU threads).
 
 2. **Make the first administrator** (see [Accounts](#accounts)):
    ```sh
@@ -54,9 +54,8 @@ Run these from the project folder.
 5. **Open http://localhost:8073** and sign in with the account from step 2. Other people can create their own
    accounts from the sign-in page, unless you close sign-up in the administration page.
 
-If the folder contains another compose file named `compose.yaml`, Docker uses that one instead. In that
-case add `-f docker-compose.yml` to every `docker compose` command, for example
-`docker compose -f docker-compose.yml up -d --build`. The scripts already do this.
+`compose.yaml` is the file Docker reads and is git-ignored, so server-specific settings stay out of git. The tracked
+`compose.template.yml` is its starting point; change the template when a setting is meant for everyone.
 
 ## Accounts
 
@@ -92,7 +91,7 @@ quotas, disable accounts, make other administrators, sign out an account everywh
 read a log of these changes. Library-wide maintenance (areas, topics, keywords) is done by an
 administrator too.
 
-Operator commands, run from the folder that holds `docker-compose.yml`:
+Operator commands, run from the folder that holds `compose.yaml`:
 
 | Command | What it does |
 |---|---|
@@ -138,7 +137,7 @@ summaries 2–4 min, audio about 12 min for 35 min of speech on an 8-core CPU.
 ## Configuration
 
 Every setting is in `.env` (see `.env.template` for the full list). Empty values fall back to the defaults in
-`docker-compose.yml`.
+`compose.template.yml`.
 
 | Variable | Purpose |
 |---|---|

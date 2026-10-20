@@ -268,6 +268,7 @@ These go against the plan, and each one is a deliberate shortcut:
   time. Someone with a file can tell whether it was added before. The terms should say so.
 - **Operator access** is a trust matter. The terms say the operator can read the PDFs; the code does not limit it.
 - **Legal review** of the terms is needed before other people register (see the draft's brackets).
-- **`compose.yaml`** in this folder is a stale Authelia setup that is git-ignored. Docker prefers it over
-  `docker-compose.yml` when you run `docker compose` without `-f`. The scripts pass `-f docker-compose.yml`.
+- **`compose.yaml`** in this folder is the production stack (Traefik routes, git-ignored). Docker reads it by default.
+  The tracked `compose.template.yml` is the localhost stack with Caddy, and `scripts/init-secrets.sh` copies it to
+  `compose.yaml` when that file is missing.
 

@@ -10,6 +10,12 @@ if [ ! -f .env ]; then
 fi
 chmod 600 .env
 
+# docker compose reads compose.yaml; the tracked template is copied there (git-ignored) on first start.
+if [ ! -f compose.yaml ]; then
+  cp compose.template.yml compose.yaml
+  echo "created compose.yaml from compose.template.yml"
+fi
+
 set_env() {  # set_env KEY VALUE: fills KEY in .env only when it is empty
   if grep -qE "^$1=$" .env; then
     sed -i "s|^$1=$|$1=$2|" .env

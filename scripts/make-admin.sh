@@ -6,4 +6,4 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 [ $# -eq 1 ] || { echo "Usage: $0 <email>" >&2; exit 2; }
 # No -T: the password is read from the terminal.
-docker compose -f docker-compose.yml exec api python -m listen.cli make-admin "$1"
+docker compose exec api python -m listen.cli make-admin "$1"

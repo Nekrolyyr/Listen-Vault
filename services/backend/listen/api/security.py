@@ -17,7 +17,7 @@ from .. import accounts
 
 SESSION_COOKIE = "listen_session"
 PUBLIC_API = {
-    "/api/health",          # Docker healthcheck (no secret, see docker-compose.yml)
+    "/api/health",          # Docker healthcheck (no secret, see compose.template.yml)
     "/api/auth/register",
     "/api/auth/login",
     "/api/auth/verify",

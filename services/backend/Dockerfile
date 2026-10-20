@@ -1,4 +1,4 @@
-# Build context: the repository root (see docker-compose.yml). Targets: api, worker.
+# Build context: the repository root (see compose.template.yml). Targets: api, worker.
 
 FROM node:22-alpine AS web
 WORKDIR /web

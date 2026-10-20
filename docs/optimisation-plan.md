@@ -70,7 +70,7 @@ Goal: a repeatable score for each feature on the current model, so every later c
 
 1.4 **Fallback.** If no setting from the ladder meets the latency gate below, use the highest layer count that starts and
     accept the slower speed, or drop to Qwen3-4B (about 2.5 GB, fits fully) as a documented second option. The layer count is
-    set in `.env` as `LLM_GPU_LAYERS`, which `docker-compose.yml` already reads.
+    set in `.env` as `LLM_GPU_LAYERS`, which `compose.template.yml` already reads.
 
 1.5 **Chat format.** Qwen3 is a chat model; the raw `Question: … Answer:` format used for BLOOMZ is replaced by its
     template. Non-thinking mode is set by an empty think block after the assistant tag:

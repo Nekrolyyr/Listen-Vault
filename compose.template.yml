@@ -1,5 +1,6 @@
-# listen-vault for localhost. Open http://localhost:8073 (LISTEN_PORT), register, and confirm the account by
-# email (if SMTP is configured). The first administrator is made with scripts/make-admin.sh.
+# listen-vault for localhost. Copy this file to compose.yaml (the name Docker reads, git-ignored) before the first
+# start: cp compose.template.yml compose.yaml. Open http://localhost:8073 (LISTEN_PORT), register, and confirm the
+# account by email (if SMTP is configured). The first administrator is made with scripts/make-admin.sh.
 # See README.md for the first start.
 #
 # Everything lives in this folder (git-ignored):

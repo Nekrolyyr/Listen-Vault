@@ -3,7 +3,7 @@
 # Stops the api and worker, restores the database and the library folder, then starts everything again.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-COMPOSE="docker compose -f docker-compose.yml"
+COMPOSE="docker compose"
 RUN=${1:?backup run directory}
 
 read -r -p "This replaces the current library and database with $RUN. Continue? [y/N] " ok

@@ -4,7 +4,7 @@
 # Skip the audio with NO_AUDIO=1; it can be regenerated from the documents.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-COMPOSE="docker compose -f docker-compose.yml"
+COMPOSE="docker compose"
 
 TARGET=${1:-backups}
 RUN="$TARGET/$(date +%Y-%m-%d_%H%M%S)"
