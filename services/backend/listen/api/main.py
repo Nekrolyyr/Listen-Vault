@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 from pypdf import PdfReader
 
-from .. import accounts, appsettings, areas, config, db, documents, embeddings, jobs, library
+from .. import accounts, appsettings, areas, config, db, documents, embeddings, jobs, library, narrations
 from ..storage import DocPaths
 from .admin import register_admin_routes
 from .deps import admin_only, pool, uid, user_of
@@ -35,7 +35,7 @@ KOKORO_VOICES = [
     "am_michael", "am_onyx", "am_puck", "am_santa", "bf_alice", "bf_emma", "bf_isabella", "bf_lily",
     "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
 ]
-RERUN_STAGES = {"start": "ocr", "structure": "structure", "chapters": "chapters", "synthesis": "synthesis"}
+RERUN_STAGES = {"start": "ocr", "structure": "structure", "chapters": "chapters"}
 
 # The documents of the signed-in user's library, with their state for that user. Every document query starts
 # from this join, so a paper that is not in the library is never found.
@@ -43,14 +43,15 @@ LIB_FROM = "documents d JOIN library_entries le ON le.document_id = d.id AND le.
 
 DOC_LIST_SQL = """
 SELECT d.*, le.listened, le.last_listened_at,
+       n.state AS audio_state, n.duration_s, n.settings->>'voice' AS voice,
        j.state AS job_state, j.stage AS job_stage, j.progress_done, j.progress_total,
        j.error AS job_error, j.run_after AS job_run_after,
        (SELECT count(*) FROM chapters c WHERE c.document_id = d.id) AS chapter_count,
-       (SELECT count(*) FROM chapters c WHERE c.document_id = d.id AND c.audio_file IS NOT NULL) AS ready_count,
+       (SELECT count(*) FROM narration_chapters nc WHERE nc.narration_id = n.id) AS ready_count,
        p.chapter_idx AS play_chapter, p.position_s AS play_position,
        (SELECT c.title FROM chapters c WHERE c.document_id = d.id AND c.idx = p.chapter_idx) AS play_chapter_title,
-       (SELECT coalesce(sum(c.duration_s), 0) FROM chapters c
-          WHERE c.document_id = d.id AND c.idx < p.chapter_idx) AS play_before_s,
+       (SELECT coalesce(sum(nc.duration_s), 0) FROM narration_chapters nc
+          WHERE nc.narration_id = n.id AND nc.idx < p.chapter_idx) AS play_before_s,
        (SELECT coalesce(array_agg(t.term ORDER BY t.weight DESC), '{}') FROM (
             SELECT k.term, k.weight FROM document_keywords k
             WHERE k.document_id = d.id AND k.kind IN ('task', 'method', 'topic')
@@ -61,6 +62,7 @@ SELECT d.*, le.listened, le.last_listened_at,
        ar.source AS area_source, ar.pinned AS area_pinned
 FROM documents d
 JOIN library_entries le ON le.document_id = d.id AND le.user_id = %(uid)s
+LEFT JOIN narrations n ON n.document_id = d.id AND n.user_id = %(uid)s
 LEFT JOIN LATERAL (SELECT * FROM jobs WHERE document_id = d.id ORDER BY id DESC LIMIT 1) j ON true
 LEFT JOIN playback p ON p.document_id = d.id AND p.user_id = %(uid)s
 LEFT JOIN document_areas ar ON ar.document_id = d.id
@@ -175,7 +177,8 @@ def _doc_out(r: dict[str, Any]) -> dict[str, Any]:
         "id": str(r["id"]), "title": r["title"] or r.get("original_filename") or r.get("source_url") or "Untitled",
         "authors": r["authors"], "published": r["published"], "source_type": r["source_type"],
         "source_url": r["source_url"], "has_pdf": r["has_pdf"], "ocr_applied": r["ocr_applied"],
-        "status": r["status"], "error": r["error"], "duration_s": r["duration_s"], "voice": r["voice"],
+        "status": r["status"], "error": r["error"], "duration_s": r.get("duration_s"), "voice": r.get("voice"),
+        "audio_state": r.get("audio_state"),
         "pages": r["pages"], "listened": r["listened"], "last_listened_at": r["last_listened_at"],
         "created_at": r["created_at"], "abstract": r.get("abstract"),
     }
@@ -316,9 +319,10 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
                 return {str(r["v"]): r["n"] for r in rows if r["v"] is not None}
 
             totals = conn.execute(
-                "SELECT count(*) AS n, coalesce(sum(d.duration_s), 0) AS audio, "
-                "coalesce(sum(d.duration_s) FILTER (WHERE le.listened), 0) AS listened_audio "
-                f"FROM {LIB_FROM} WHERE TRUE{clause}", params).fetchone()
+                "SELECT count(*) AS n, coalesce(sum(nr.duration_s), 0) AS audio, "
+                "coalesce(sum(nr.duration_s) FILTER (WHERE le.listened), 0) AS listened_audio "
+                f"FROM {LIB_FROM} LEFT JOIN narrations nr ON nr.document_id = d.id AND nr.user_id = %(uid)s "
+                f"WHERE TRUE{clause}", params).fetchone()
             terms = conn.execute(
                 "SELECT k.kind, k.term, count(*) AS n FROM document_keywords k "
                 "JOIN documents d ON d.id = k.document_id "
@@ -348,8 +352,9 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
         with pool(request).connection() as conn:
             totals = conn.execute(
                 "SELECT count(*) AS papers, count(*) FILTER (WHERE NOT le.listened) AS unread, "
-                "count(*) FILTER (WHERE d.status = 'failed') AS failed, coalesce(sum(d.duration_s), 0) AS audio_s "
-                f"FROM {LIB_FROM}", {"uid": user_id}).fetchone()
+                "count(*) FILTER (WHERE d.status = 'failed') AS failed, coalesce(sum(nr.duration_s), 0) AS audio_s "
+                f"FROM {LIB_FROM} LEFT JOIN narrations nr ON nr.document_id = d.id AND nr.user_id = %(uid)s",
+                {"uid": user_id}).fetchone()
             unplaced = conn.execute(
                 f"SELECT count(*) AS n FROM {LIB_FROM} LEFT JOIN document_areas a ON a.document_id = d.id "
                 "WHERE a.document_id IS NULL AND d.status <> 'failed'", {"uid": user_id}).fetchone()["n"]
@@ -551,7 +556,7 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
                 f"JOIN document_keywords k ON k.document_id = d.id WHERE TRUE{clause}", params,
             ).fetchall()
             meta = conn.execute(
-                f"SELECT d.id, d.title, d.published, d.status, le.listened, d.source_type, d.duration_s "
+                f"SELECT d.id, d.title, d.published, d.status, le.listened, d.source_type "
                 f"FROM {LIB_FROM} WHERE TRUE{clause}", params).fetchall()
         docs = {str(m["id"]): {"id": str(m["id"]), "title": m["title"] or "Untitled",
                                "year": (m["published"] or "")[:4] or None, "status": m["status"],
@@ -599,6 +604,7 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
                         raise HTTPException(409, "This paper is already in your library")
                     require_quota(conn, user, existing["pages"] or 0)
                     documents.add_entry(conn, user["id"], existing["id"])
+                    narrations.queue(conn, existing["id"], user["id"])  # the text is there; the audio is this user's
                     return _doc_out(get_doc(conn, existing["id"], user["id"]))
                 require_quota(conn, user, pages)
                 row = conn.execute(
@@ -610,6 +616,7 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
                 tmp.replace(paths.source_pdf)
                 documents.add_entry(conn, user["id"], row["id"])
                 jobs.enqueue(conn, row["id"], user_id=user["id"])
+                narrations.queue(conn, row["id"], user["id"])
                 return _doc_out(get_doc(conn, row["id"], user["id"]))
         finally:
             tmp.unlink(missing_ok=True)
@@ -632,6 +639,7 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
                 if documents.in_library(conn, user["id"], existing["id"]):
                     raise HTTPException(409, "This link is already in your library")
                 documents.add_entry(conn, user["id"], existing["id"])
+                narrations.queue(conn, existing["id"], user["id"])
                 return _doc_out(get_doc(conn, existing["id"], user["id"]))
             row = conn.execute(
                 "INSERT INTO documents (source_type, source_url, title) VALUES ('url', %s, %s) RETURNING id",
@@ -640,6 +648,7 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
             DocPaths(settings.docs_dir, row["id"]).ensure()
             documents.add_entry(conn, user["id"], row["id"])
             jobs.enqueue(conn, row["id"], user_id=user["id"])
+            narrations.queue(conn, row["id"], user["id"])
             return _doc_out(get_doc(conn, row["id"], user["id"]))
 
     @app.get("/api/documents/{doc_id}")
@@ -649,8 +658,12 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
             out["chapters"] = [
                 {"idx": c["idx"], "kind": c["kind"], "title": c["title"], "intro": c["intro"],
                  "start_page": c["start_page"], "word_count": c["word_count"],
-                 "duration_s": c["duration_s"], "ready": c["audio_file"] is not None}
-                for c in conn.execute("SELECT * FROM chapters WHERE document_id = %s ORDER BY idx", (doc_id,))
+                 "duration_s": c["duration_s"], "ready": c["ready"]}
+                for c in conn.execute(
+                    "SELECT c.*, nc.duration_s, nc.idx IS NOT NULL AS ready FROM chapters c "
+                    "LEFT JOIN narrations n ON n.document_id = c.document_id AND n.user_id = %(uid)s "
+                    "LEFT JOIN narration_chapters nc ON nc.narration_id = n.id AND nc.idx = c.idx "
+                    "WHERE c.document_id = %(doc)s ORDER BY c.idx", {"uid": uid(request), "doc": doc_id})
             ]
             out["keywords"] = _keywords_by_kind(conn.execute(
                 "SELECT kind, term FROM document_keywords WHERE document_id = %s ORDER BY weight DESC, term",
@@ -724,14 +737,40 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
         """Take the paper out of the user's library. The stored copy is deleted when no library holds it."""
         with pool(request).connection() as conn, conn.transaction():
             removed, orphans = documents.remove_entry(conn, uid(request), doc_id)
+            audio = narrations.take(conn, doc_id, uid(request)) if removed else []
         if not removed:
             raise HTTPException(404, "Document not found")
+        narrations.delete_files(settings.docs_dir, doc_id, audio)
         documents.delete_files(settings.docs_dir, orphans)
+
+    @app.post("/api/documents/{doc_id}/audio", status_code=202)
+    def make_audio(request: Request, doc_id: UUID):
+        """Make the signed-in user's audio for this paper, with their audio settings (when they have none yet)."""
+        with pool(request).connection() as conn, conn.transaction():
+            row = get_doc(conn, doc_id, uid(request))
+            if row["status"] != "ready" and row["status"] != "queued" and row["status"] != "processing":
+                raise HTTPException(409, "This paper could not be processed, so there is no audio for it")
+            if row["audio_state"] in ("ready", "running", "queued"):
+                raise HTTPException(409, "This paper already has audio. Regenerate it to use your current settings.")
+            queued = narrations.queue(conn, doc_id, uid(request))
+            return {"queued": queued}
 
     @app.post("/api/documents/{doc_id}/rerun", status_code=202)
     def rerun(request: Request, doc_id: UUID, body: RerunIn = Body(default_factory=RerunIn)):
-        if body.stage not in RERUN_STAGES:
-            raise HTTPException(422, f"stage must be one of {', '.join(RERUN_STAGES)}")
+        """Process the paper again from a stage, or (stage "synthesis") make the signed-in user's audio again."""
+        if body.stage != "synthesis" and body.stage not in RERUN_STAGES:
+            raise HTTPException(422, f"stage must be one of {', '.join(['synthesis', *RERUN_STAGES])}")
+        if body.stage == "synthesis":
+            with pool(request).connection() as conn, conn.transaction():
+                row = get_doc(conn, doc_id, uid(request))
+                if row["status"] != "ready":
+                    raise HTTPException(409, "The paper must be processed before its audio can be made again")
+                audio = narrations.take(conn, doc_id, uid(request))
+                if not narrations.queue(conn, doc_id, uid(request)):
+                    raise HTTPException(409, "The audio is already being made")
+                out = _doc_out(get_doc(conn, doc_id, uid(request)))
+            narrations.delete_files(settings.docs_dir, doc_id, audio)
+            return out
         with pool(request).connection() as conn, conn.transaction():
             row = get_doc(conn, doc_id, uid(request))
             if jobs.has_open_job(conn, doc_id):
@@ -760,12 +799,22 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
         return FileResponse(target, media_type="application/pdf",
                             headers={"Cache-Control": "private, max-age=3600"})
 
+    def no_audio() -> HTTPException:
+        return HTTPException(404, {"code": "no_audio", "message": "There is no audio for this paper yet"})
+
     @app.get("/api/documents/{doc_id}/chapters/{idx}/audio")
     def chapter_audio(request: Request, doc_id: UUID, idx: int):
+        """The audio of this chapter in the signed-in user's own narration."""
         member_or_404(request, doc_id)
-        f = DocPaths(settings.docs_dir, doc_id).audio(idx)
-        if idx < 0 or not f.exists():
-            raise HTTPException(404, "This chapter has no audio yet")
+        with pool(request).connection() as conn:
+            row = conn.execute(
+                "SELECT nc.audio_file FROM narrations n JOIN narration_chapters nc ON nc.narration_id = n.id "
+                "WHERE n.document_id = %s AND n.user_id = %s AND nc.idx = %s", (doc_id, uid(request), idx)).fetchone()
+        if idx < 0 or row is None:
+            raise no_audio()
+        f = DocPaths(settings.docs_dir, doc_id).root / row["audio_file"]
+        if not f.exists():
+            raise no_audio()
         return FileResponse(f, media_type="audio/mp4", headers={"Cache-Control": "private, max-age=3600"})
 
     @app.get("/api/documents/{doc_id}/chapters/{idx}/sentences")
@@ -773,9 +822,10 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
         member_or_404(request, doc_id)
         with pool(request).connection() as conn:
             rows = conn.execute(
-                "SELECT s.idx, s.text, s.page, s.start_s, s.end_s, s.rects FROM sentences s "
-                "JOIN chapters c ON c.id = s.chapter_id WHERE c.document_id = %s AND c.idx = %s ORDER BY s.idx",
-                (doc_id, idx),
+                "SELECT s.idx, s.text, s.page, s.start_s, s.end_s, s.rects FROM narrations n "
+                "JOIN narration_sentences s ON s.narration_id = n.id "
+                "WHERE n.document_id = %s AND n.user_id = %s AND s.chapter_idx = %s ORDER BY s.idx",
+                (doc_id, uid(request), idx),
             ).fetchall()
         return [{"i": r["idx"], "text": r["text"], "page": r["page"], "start": r["start_s"], "end": r["end_s"],
                  "rects": r["rects"] or []} for r in rows]
@@ -827,17 +877,17 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
     @app.get("/api/settings")
     def get_settings(request: Request):
         with pool(request).connection() as conn:
-            values = appsettings.get_all(conn)
+            values = appsettings.get_all(conn, uid(request))
         return {"values": values, "voices": KOKORO_VOICES, "engines": ["kokoro", "piper"]}
 
     @app.put("/api/settings")
     def put_settings(request: Request, body: dict[str, Any] = Body(...)):
-        """Voice and speech settings. Shared by every user for now: audio is generated once per paper."""
+        """The signed-in user's settings. Audio made from now on uses them; existing audio keeps its voice."""
         if "voice" in body and body["voice"] not in KOKORO_VOICES:
             raise HTTPException(422, "Unknown voice")
         try:
             with pool(request).connection() as conn:
-                values = appsettings.update(conn, body)
+                values = appsettings.update(conn, uid(request), body)
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
         return {"values": values, "voices": KOKORO_VOICES, "engines": ["kokoro", "piper"]}

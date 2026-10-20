@@ -62,6 +62,8 @@ export interface Doc {
   has_pdf: boolean;
   ocr_applied: boolean;
   status: "queued" | "processing" | "ready" | "failed";
+  /** The signed-in user's audio: null when they have none yet (see narrations in the api). */
+  audio_state: "queued" | "running" | "ready" | "failed" | null;
   error: string | null;
   duration_s: number | null;
   voice: string | null;
@@ -385,6 +387,7 @@ export const api = {
   patch: (id: string, changes: { title?: string; listened?: boolean }) =>
     request<Doc>("PATCH", `/api/documents/${id}`, changes),
   remove: (id: string) => request<void>("DELETE", `/api/documents/${id}`),
+  makeAudio: (id: string) => request<{ queued: boolean }>("POST", `/api/documents/${id}/audio`),
   rerun: (id: string, stage: "start" | "structure" | "chapters" | "synthesis") =>
     request<Doc>("POST", `/api/documents/${id}/rerun`, { stage }),
   sentences: (id: string, idx: number) => request<Sentence[]>("GET", `/api/documents/${id}/chapters/${idx}/sentences`),

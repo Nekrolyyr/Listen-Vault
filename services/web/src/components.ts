@@ -132,7 +132,9 @@ export function paperRow(doc: Doc, reload: () => void): HTMLElement {
       { class: "menu-items", role: "menu" },
       h("button", { type: "button", role: "menuitem", onclick: () => act(doc, "listened", reload) }, icon("check"), doc.listened ? "Mark as not listened" : "Mark as listened"),
       h("button", { type: "button", role: "menuitem", onclick: () => openClassifier(doc.id, reload) }, "Areas and topics…"),
-      h("button", { type: "button", role: "menuitem", onclick: () => act(doc, "rerun-audio", reload), disabled: notProcessed(doc) }, icon("refresh"), "Regenerate audio"),
+      doc.status === "ready" && (doc.audio_state === null || doc.audio_state === "failed")
+        ? h("button", { type: "button", role: "menuitem", onclick: () => act(doc, "make-audio", reload) }, icon("refresh"), "Make audio")
+        : h("button", { type: "button", role: "menuitem", onclick: () => act(doc, "rerun-audio", reload), disabled: notProcessed(doc) }, icon("refresh"), "Regenerate audio"),
       h("button", { type: "button", role: "menuitem", onclick: () => act(doc, "rerun-start", reload), disabled: notProcessed(doc) }, icon("refresh"), "Process from scratch"),
       h("button", { type: "button", role: "menuitem", class: "danger", onclick: () => act(doc, "delete", reload) }, icon("trash"), "Delete"),
     ),

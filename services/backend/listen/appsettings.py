@@ -1,4 +1,4 @@
-"""User-adjustable settings stored in the settings table, with defaults."""
+"""The signed-in user's settings (audio and reading), stored per account in user_settings, with defaults."""
 from __future__ import annotations
 
 import json
@@ -6,6 +6,7 @@ from typing import Any
 
 from psycopg import Connection
 
+# Audio settings are the account's own: the audio made for a paper uses the settings of the user who added it.
 DEFAULTS: dict[str, Any] = {
     "engine": "kokoro",          # kokoro | piper
     "voice": "af_heart",         # Kokoro voice id; Piper uses its single installed voice
@@ -13,6 +14,7 @@ DEFAULTS: dict[str, Any] = {
     "citations": "remove",       # remove | speak  — "(Smith et al., 2020)"
     "reading_wpm": 300,          # speed-read target, words per minute (150–800)
 }
+AUDIO_KEYS = ("engine", "voice", "speech_speed", "citations")
 
 INT_RANGES: dict[str, tuple[int, int]] = {
     "reading_wpm": (150, 800),
@@ -24,9 +26,9 @@ CHOICES: dict[str, tuple] = {
 }
 
 
-def get_all(conn: Connection) -> dict[str, Any]:
+def get_all(conn: Connection, user_id: int) -> dict[str, Any]:
     values = dict(DEFAULTS)
-    for row in conn.execute("SELECT key, value FROM settings"):
+    for row in conn.execute("SELECT key, value FROM user_settings WHERE user_id = %s", (user_id,)):
         if row["key"] in DEFAULTS:
             values[row["key"]] = row["value"]
     return values
@@ -58,11 +60,11 @@ def validate(changes: dict[str, Any]) -> dict[str, Any]:
     return clean
 
 
-def update(conn: Connection, changes: dict[str, Any]) -> dict[str, Any]:
+def update(conn: Connection, user_id: int, changes: dict[str, Any]) -> dict[str, Any]:
     for key, value in validate(changes).items():
         conn.execute(
-            "INSERT INTO settings (key, value) VALUES (%s, %s) "
-            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
-            (key, json.dumps(value)),
+            "INSERT INTO user_settings (user_id, key, value) VALUES (%s, %s, %s) "
+            "ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value",
+            (user_id, key, json.dumps(value)),
         )
-    return get_all(conn)
+    return get_all(conn, user_id)

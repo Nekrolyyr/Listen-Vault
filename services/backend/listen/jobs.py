@@ -56,7 +56,9 @@ def enqueue_question(conn: Connection, document_id: UUID | str, question_id: int
 
 
 def open_for_user(conn: Connection, user_id: int) -> int:
-    return conn.execute("SELECT count(*) AS n FROM jobs WHERE user_id = %s AND state IN ('queued', 'running')",
+    """Papers the user has waiting: a paper's text and audio jobs count once."""
+    return conn.execute("SELECT count(DISTINCT document_id) AS n FROM jobs WHERE user_id = %s "
+                        "AND kind IN ('document', 'narrate') AND state IN ('queued', 'running')",
                         (user_id,)).fetchone()["n"]
 
 
@@ -96,6 +98,16 @@ def claim(conn: Connection, worker: str) -> dict[str, Any] | None:
                 (row["document_id"],),
             )
     return row
+
+
+def defer(conn: Connection, job_id: int, seconds: int) -> None:
+    """Re-queue a running job to run again later, without counting this claim as an attempt."""
+    with conn.transaction():
+        conn.execute(
+            "UPDATE jobs SET state = 'queued', worker = NULL, attempts = attempts - 1, heartbeat_at = NULL, "
+            "run_after = now() + %s WHERE id = %s",
+            (timedelta(seconds=seconds), job_id),
+        )
 
 
 def heartbeat(conn: Connection, job_id: int, stage: str | None = None,

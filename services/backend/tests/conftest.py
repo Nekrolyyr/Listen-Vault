@@ -33,7 +33,7 @@ def database_url():
 @pytest.fixture
 def clean_db(database_url):
     with psycopg.connect(database_url, autocommit=True) as conn:
-        conn.execute("TRUNCATE documents, chapters, sentences, jobs, playback, settings, "
+        conn.execute("TRUNCATE documents, chapters, narrations, jobs, playback, settings, user_settings, "
                      "document_keywords, users, admin_audit, auth_attempts, terms_versions RESTART IDENTITY CASCADE")
     return database_url
 

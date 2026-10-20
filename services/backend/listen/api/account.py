@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
-from .. import accounts, config, documents, mail
+from .. import accounts, config, documents, mail, narrations
 from ..storage import DocPaths
 from .deps import client_ip, pool, user_of
 from .security import SESSION_COOKIE
@@ -198,9 +198,15 @@ def register_account_routes(app: FastAPI, settings: config.Settings) -> None:
                 "WHERE le.user_id = %s ORDER BY le.added_at", (user["id"],)).fetchall()
             consents = conn.execute("SELECT version, accepted_at FROM user_consents WHERE user_id = %s",
                                     (user["id"],)).fetchall()
+            audio = conn.execute(
+                "SELECT d.title, n.state, n.duration_s, n.settings, n.created_at FROM narrations n "
+                "JOIN documents d ON d.id = n.document_id WHERE n.user_id = %s ORDER BY n.created_at",
+                (user["id"],)).fetchall()
         summary = {
             "email": user["email"], "created_at": user["created_at"], "exported_at": datetime.now(timezone.utc),
             "consents": consents,
+            "audio": [{"title": r["title"], "state": r["state"], "duration_s": r["duration_s"],
+                       "settings": r["settings"], "made_at": r["created_at"]} for r in audio],
             "library": [{"title": r["title"], "source_type": r["source_type"], "source_url": r["source_url"],
                          "pages": r["pages"], "added_at": r["added_at"], "listened": r["listened"],
                          "last_listened_at": r["last_listened_at"],
@@ -229,8 +235,12 @@ def register_account_routes(app: FastAPI, settings: config.Settings) -> None:
                 raise HTTPException(403, "The password is wrong")
             if user["is_admin"] and accounts.admin_count(conn) <= 1:
                 raise HTTPException(409, "You are the only administrator. Make another account an administrator first.")
+            audio = [(r["document_id"], narrations.take(conn, r["document_id"], user["id"])) for r in conn.execute(
+                "SELECT document_id FROM narrations WHERE user_id = %s", (user["id"],)).fetchall()]
             conn.execute("DELETE FROM users WHERE id = %s", (user["id"],))
             orphans = documents.purge_orphans(conn)
+        for doc_id, paths in audio:
+            narrations.delete_files(settings.docs_dir, doc_id, paths)
         documents.delete_files(settings.docs_dir, orphans)
         response.delete_cookie(SESSION_COOKIE, path="/")
         log.info("account %s deleted", user["id"])

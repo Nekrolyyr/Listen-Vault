@@ -294,12 +294,18 @@ export function readerView(id: string): View {
   // ---------------------------------------------------------------- rendering
   function renderHead(): void {
     if (!doc) return;
+    // audio is the signed-in user's own: a paper can be ready and still have no audio for this user yet
+    const noAudio = doc.status === "ready" && (doc.audio_state === null || doc.audio_state === "failed");
     const status =
-      doc.status === "ready"
+      doc.status === "ready" && doc.audio_state === "ready"
         ? `${duration(doc.duration_s)} · ${doc.chapters.length} chapters`
         : doc.status === "failed"
           ? `Processing failed: ${doc.error ?? ""}`
-          : `Generating audio · ${doc.chapters.filter((c) => c.ready).length} of ${doc.chapters.length || "…"} chapters ready`;
+          : noAudio
+            ? doc.audio_state === "failed" ? `Audio failed: ${doc.job?.error ?? "try again"}` : "No audio yet"
+            : doc.status === "ready"
+              ? `Generating audio · ${doc.chapters.filter((c) => c.ready).length} of ${doc.chapters.length || "…"} chapters ready`
+              : `Processing · ${doc.job?.stage ?? "queued"}`;
     head.replaceChildren(
       h("a", { href: "/", "data-link": true, class: "back", "aria-label": "Back to library" }, icon("arrowLeft")),
       h(
@@ -309,6 +315,20 @@ export function readerView(id: string): View {
         h("p", {}, [authors(doc.authors), doc.published?.slice(0, 4), status].filter(Boolean).join(" · ")),
       ),
       ...(doc.source_url ? [h("a", { href: doc.source_url, target: "_blank", rel: "noopener noreferrer", class: "btn small" }, "Source")] : []),
+      ...(noAudio
+        ? [h("button", {
+          type: "button", class: "btn small primary",
+          onclick: async () => {
+            try {
+              await api.makeAudio(id);
+              toast("Making your audio. It plays as each chapter is ready.");
+              void refresh();
+            } catch (e) {
+              toast((e as Error).message, "error");
+            }
+          },
+        }, "Make audio")]
+        : []),
     );
     qaSubmit.disabled = doc.status !== "ready";
     qaText.disabled = doc.status !== "ready";

@@ -5,7 +5,8 @@
   structure.json             normalized document model
   enriched.json              marker: search terms were extracted (their rows are in document_keywords)
   chapters.json              chapter plan (overview = abstract, LLM-written chapter titles)
-  audio/<idx>.m4a            one audio file per chapter (idx 0 = overview)
+  narrations/<id>/<idx>.m4a  one audio file per chapter of one user's narration (idx 0 = overview); see narrations.py
+  audio/<idx>.m4a            audio made before per-user narrations (its rows are narration rows of the legacy owner)
 """
 from __future__ import annotations
 
@@ -24,13 +25,9 @@ class DocPaths:
     structure = property(lambda self: self.root / "structure.json")
     enriched = property(lambda self: self.root / "enriched.json")
     chapters = property(lambda self: self.root / "chapters.json")
-    audio_dir = property(lambda self: self.root / "audio")
-
-    def audio(self, idx: int) -> Path:
-        return self.audio_dir / f"{int(idx)}.m4a"
 
     def ensure(self) -> "DocPaths":
-        self.audio_dir.mkdir(parents=True, exist_ok=True)
+        self.root.mkdir(parents=True, exist_ok=True)
         return self
 
     def remove(self) -> None:
@@ -38,7 +35,7 @@ class DocPaths:
 
     def reset_from(self, stage: str) -> None:
         """Delete artifacts of `stage` and everything after it, so those stages run again."""
-        order = ["ocr", "structure", "chapters", "synthesis"]
+        order = ["ocr", "structure", "chapters"]
         if stage not in order:
             return
         later = order[order.index(stage):]
@@ -48,4 +45,4 @@ class DocPaths:
             self.structure.unlink(missing_ok=True)
         if "chapters" in later:
             self.chapters.unlink(missing_ok=True)
-        shutil.rmtree(self.audio_dir, ignore_errors=True)
+        shutil.rmtree(self.root / "narrations", ignore_errors=True)

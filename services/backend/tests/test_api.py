@@ -162,7 +162,14 @@ def test_playback_and_settings(client):
 def test_audio_supports_range_requests(client, settings):
     doc_id = client.post("/api/documents/url", json={"url": "https://example.org/a"}, headers=AUTH).json()["id"]
     paths = DocPaths(settings.docs_dir, doc_id).ensure()
-    paths.audio(1).write_bytes(bytes(range(256)) * 40)
+    (paths.root / "narrations" / "1").mkdir(parents=True)
+    (paths.root / "narrations" / "1" / "1.m4a").write_bytes(bytes(range(256)) * 40)
+    with psycopg.connect(settings.database_url, autocommit=True) as conn:
+        narration = conn.execute("INSERT INTO narrations (document_id, user_id, state) "
+                                 "SELECT %s, id, 'ready' FROM users WHERE email = 'doctor@example.org' RETURNING id",
+                                 (doc_id,)).fetchone()[0]
+        conn.execute("INSERT INTO narration_chapters (narration_id, idx, audio_file, duration_s) "
+                         "VALUES (%s, 1, 'narrations/' || %s || '/1.m4a', 10)", (narration, narration))
     r = client.get(f"/api/documents/{doc_id}/chapters/1/audio", headers={**AUTH, "Range": "bytes=100-199"})
     assert r.status_code == 206
     assert r.headers["content-range"] == "bytes 100-199/10240"
@@ -184,11 +191,13 @@ def _library_doc(settings, title, published, status, terms, listened=False, sour
     """A processed paper in the library of the doctor (the account the client fixture signs in)."""
     with psycopg.connect(settings.database_url, autocommit=True) as conn:
         doc_id = conn.execute(
-            "INSERT INTO documents (source_type, title, published, status, duration_s) "
-            "VALUES (%s, %s, %s, %s, 600) RETURNING id",
+            "INSERT INTO documents (source_type, title, published, status) "
+            "VALUES (%s, %s, %s, %s) RETURNING id",
             (source, title, published, status)).fetchone()[0]
         conn.execute("INSERT INTO library_entries (user_id, document_id, listened) "
                      "SELECT id, %s, %s FROM users WHERE email = 'doctor@example.org'", (doc_id, listened))
+        conn.execute("INSERT INTO narrations (document_id, user_id, state, duration_s) "
+                     "SELECT %s, id, 'ready', 600 FROM users WHERE email = 'doctor@example.org'", (doc_id,))
         for kind, term in terms:
             conn.execute("INSERT INTO document_keywords (document_id, kind, term, source) "
                          "VALUES (%s, %s, %s, 'llm')", (doc_id, kind, term))
@@ -264,10 +273,15 @@ def test_timeline_and_topics(client, settings):
 def test_playback_shows_the_chapter_and_progress_through_the_paper(client, settings):
     doc = _library_doc(settings, "Long paper", "2024", "ready", [("task", "long task")])
     with psycopg.connect(settings.database_url, autocommit=True) as conn:
-        conn.execute("UPDATE documents SET duration_s = 1000 WHERE id = %s", (doc,))
-        conn.execute("INSERT INTO chapters (document_id, idx, kind, title, duration_s) VALUES "
-                     "(%s, 0, 'overview', 'Overview', 100), (%s, 1, 'chapter', 'Methods', 300), "
-                     "(%s, 2, 'chapter', 'Results', 600)", (doc, doc, doc))
+        conn.execute("INSERT INTO chapters (document_id, idx, kind, title) VALUES "
+                     "(%s, 0, 'overview', 'Overview'), (%s, 1, 'chapter', 'Methods'), "
+                     "(%s, 2, 'chapter', 'Results')", (doc, doc, doc))
+        conn.execute("UPDATE narrations SET duration_s = 1000 WHERE document_id = %s", (doc,))
+        conn.execute("INSERT INTO narration_chapters (narration_id, idx, audio_file, duration_s) "
+                     "SELECT n.id, c.idx, 'audio/' || c.idx || '.m4a', d FROM narrations n "
+                     "JOIN (VALUES (0, 100.0), (1, 300.0), (2, 600.0)) AS v(idx, d) ON true "
+                     "JOIN chapters c ON c.document_id = n.document_id AND c.idx = v.idx "
+                     "WHERE n.document_id = %s", (doc,))
     client.put(f"/api/documents/{doc}/playback", json={"chapter_idx": 1, "position_s": 150, "rate": 1.0}, headers=AUTH)
     listed = client.get("/api/documents", headers=AUTH).json()[0]
     assert listed["playback"]["chapter_title"] == "Methods"

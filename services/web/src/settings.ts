@@ -38,7 +38,8 @@ export function settingsView(): View {
       h(
         "fieldset",
         {},
-        h("legend", {}, "Voice"),
+        h("legend", {}, "Audio (yours)"),
+        h("p", { class: "hint" }, "Your audio is made with these settings, and only for papers you add. Audio you already have keeps the voice it was made with; choose “Regenerate audio” on a paper to use the current settings."),
         h(
           "div",
           { class: "radio-row" },
@@ -67,7 +68,6 @@ export function settingsView(): View {
         h("label", { class: "field" }, h("span", {}, "Speed reading, words per minute"), h("span", { class: "range" }, wpm, wpmOut)),
         h("p", { class: "hint" }, "Speed reading shows one word at a time. It starts slower and reaches this speed after about 15 seconds."),
       ),
-      h("p", { class: "hint" }, "Changes apply to newly added documents. For existing ones, choose “Regenerate audio” in the library."),
       h("div", { class: "form-actions" }, h("button", { type: "submit", class: "btn primary" }, "Save settings")),
     );
   }

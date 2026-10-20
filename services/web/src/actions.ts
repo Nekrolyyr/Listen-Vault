@@ -16,6 +16,9 @@ export async function act(doc: Doc, action: string, done: () => void): Promise<v
       toast("Deleted");
     } else if (action === "listened") {
       await api.patch(doc.id, { listened: !doc.listened });
+    } else if (action === "make-audio") {
+      await api.makeAudio(doc.id);
+      toast("Making your audio.");
     } else if (action === "rerun-audio") {
       await api.rerun(doc.id, "synthesis");
       toast("Audio will be generated again with the current voice settings.");

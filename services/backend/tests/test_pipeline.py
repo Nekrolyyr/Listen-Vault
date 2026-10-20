@@ -6,7 +6,7 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-from listen import jobs
+from listen import jobs, narrations
 from listen.storage import DocPaths
 from listen.worker import grobid
 from listen.worker.main import Worker
@@ -66,12 +66,21 @@ def _worker(settings, pool, engine=None):
     return Worker(settings, pool, pipeline), engine
 
 
+def _ann(conn) -> int:
+    return conn.execute("INSERT INTO users (email) VALUES ('ann@example.org') "
+                        "ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email RETURNING id").fetchone()["id"]
+
+
 def _new_doc(settings, conn, kind, **cols):
+    """A paper added by ann: its text job, then her audio job (as the api queues them)."""
     doc_id = conn.execute(
         "INSERT INTO documents (source_type, title, original_filename, source_url) VALUES (%s, %s, %s, %s) RETURNING id",
         (kind, cols.get("title", ""), cols.get("filename"), cols.get("url")),
     ).fetchone()["id"]
-    jobs.enqueue(conn, doc_id)
+    ann = _ann(conn)
+    conn.execute("INSERT INTO library_entries (user_id, document_id) VALUES (%s, %s)", (ann, doc_id))
+    jobs.enqueue(conn, doc_id, user_id=ann)
+    narrations.queue(conn, doc_id, ann)
     return doc_id, DocPaths(settings.docs_dir, doc_id).ensure()
 
 
@@ -92,7 +101,7 @@ def test_pdf_end_to_end_with_fallback_structure(settings, pool, monkeypatch):
         doc_id, paths = _new_doc(settings, conn, "pdf", title="paper", filename="paper.pdf")
     _paper(paths.source_pdf)
     worker, engine = _worker(settings, pool)
-    assert worker.run_once()
+    assert worker.run_once()  # the text
 
     with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
         doc = conn.execute("SELECT * FROM documents").fetchone()
@@ -101,22 +110,31 @@ def test_pdf_end_to_end_with_fallback_structure(settings, pool, monkeypatch):
         assert doc["has_pdf"] and not doc["ocr_applied"]
         chapters = conn.execute("SELECT * FROM chapters ORDER BY idx").fetchall()
         assert [c["title"] for c in chapters] == ["Overview", "Introduction", "Results"]
-        assert all(c["audio_file"] and c["duration_s"] > 0 for c in chapters)
-        assert doc["duration_s"] == pytest.approx(sum(c["duration_s"] for c in chapters))
-        sents = conn.execute("SELECT s.* FROM sentences s JOIN chapters c ON c.id = s.chapter_id "
-                             "WHERE c.idx = 2 ORDER BY s.idx").fetchall()
-        assert sents[0]["text"] == "Results" and sents[0]["page"] == 2
-        assert all(a["end_s"] <= b["start_s"] for a, b in zip(sents, sents[1:]))
-        job = conn.execute("SELECT * FROM jobs").fetchone()
-        assert job["state"] == "done" and job["progress_done"] == job["progress_total"] == 3
+        assert conn.execute("SELECT count(*) AS n FROM narration_chapters").fetchone()["n"] == 0  # no audio yet
+        text_job = conn.execute("SELECT * FROM jobs WHERE kind = 'document'").fetchone()
+        assert text_job["state"] == "done" and text_job["progress_done"] == text_job["progress_total"] == 3
         kinds = {r["kind"] for r in conn.execute("SELECT kind FROM document_keywords").fetchall()}
         assert {"task", "method", "topic", "keyword"} <= kinds  # the LLM's terms, plus frequent words
+
+    assert worker.run_once()  # the audio of the user who added the paper
+    with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
+        narration = conn.execute("SELECT * FROM narrations").fetchone()
+        assert narration["state"] == "ready" and narration["duration_s"] > 0
+        assert narration["settings"]["voice"] == "af_heart"  # the user's audio settings
+        chapters = conn.execute("SELECT * FROM narration_chapters ORDER BY idx").fetchall()
+        assert [c["idx"] for c in chapters] == [0, 1, 2]
+        assert all(c["audio_file"] and c["duration_s"] > 0 for c in chapters)
+        assert narration["duration_s"] == pytest.approx(sum(c["duration_s"] for c in chapters))
+        sents = conn.execute("SELECT * FROM narration_sentences WHERE chapter_idx = 2 ORDER BY idx").fetchall()
+        assert sents[0]["text"] == "Results" and sents[0]["page"] == 2
+        assert all(a["end_s"] <= b["start_s"] for a, b in zip(sents, sents[1:]))
 
     # spoken text is normalized; displayed text is not
     assert "We prune heads (p less than 0.05) and keep accuracy." in engine.texts
     assert paths.viewer_pdf.exists()
     probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_name,sample_rate",
-                            "-of", "csv=p=0", str(paths.audio(2))], capture_output=True, text=True)
+                            "-of", "csv=p=0", str(paths.root / chapters[2]["audio_file"])],
+                           capture_output=True, text=True)
     assert probe.stdout.strip() == "aac,16000"
 
 
@@ -135,11 +153,12 @@ def test_article_and_resume_after_restart(settings, pool):
             return super().synth(text)
 
     worker, _ = _worker(settings, pool, CrashingEngine())
-    worker.run_once()  # crashes in synthesis -> retryable internal error
+    worker.run_once()  # the text
+    worker.run_once()  # the audio crashes -> retryable internal error
     with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
-        job = conn.execute("SELECT * FROM jobs").fetchone()
+        job = conn.execute("SELECT * FROM jobs WHERE kind = 'narrate'").fetchone()
         assert job["state"] == "queued" and "Internal error" in job["error"]
-        ready = conn.execute("SELECT idx FROM chapters WHERE audio_file IS NOT NULL ORDER BY idx").fetchall()
+        ready = conn.execute("SELECT idx FROM narration_chapters ORDER BY idx").fetchall()
         conn.execute("UPDATE jobs SET run_after = now()")
         conn.commit()
     assert ready == [{"idx": 0}]  # the overview finished before the crash
@@ -149,8 +168,9 @@ def test_article_and_resume_after_restart(settings, pool):
     with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
         doc = conn.execute("SELECT * FROM documents").fetchone()
         assert doc["status"] == "ready" and doc["title"] == "How sleep consolidates memory"
-        n = conn.execute("SELECT count(*) AS n FROM chapters WHERE audio_file IS NOT NULL").fetchone()["n"]
+        n = conn.execute("SELECT count(*) AS n FROM narration_chapters").fetchone()["n"]
         assert n == 2  # overview + one chapter (the short sections are merged)
+        assert conn.execute("SELECT state FROM narrations").fetchone()["state"] == "ready"
     assert not any("How sleep consolidates memory." == t for t in engine2.texts)  # overview not redone
 
 
@@ -167,27 +187,30 @@ def test_delete_during_job_cancels_and_cleans_up(settings, pool):
             return super().synth(text)
 
     worker, _ = _worker(settings, pool, DeletingEngine())
-    assert worker.run_once()
+    assert worker.run_once()  # the text
+    assert worker.run_once()  # the audio is cancelled with the paper
     assert not paths.root.exists()
     with psycopg.connect(settings.database_url) as conn:
         assert conn.execute("SELECT count(*) FROM jobs").fetchone()[0] == 0
 
 
-def test_rerun_synthesis_keeps_chapters(settings, pool):
+def test_regenerated_audio_keeps_the_text(settings, pool):
     with pool.connection() as conn:
         doc_id, paths = _new_doc(settings, conn, "url", url="https://example.org/sleep")
     paths.source_html.write_text(ARTICLE)
     worker, _ = _worker(settings, pool)
     worker.run_once()
+    worker.run_once()
     chapters_json = paths.chapters.read_text()
     with pool.connection() as conn:
-        jobs.enqueue(conn, doc_id, {"from": "synthesis"})
+        narrations.take(conn, doc_id, _ann(conn))
+        assert narrations.queue(conn, doc_id, _ann(conn))
     worker2, engine2 = _worker(settings, pool)
     worker2.run_once()
     assert paths.chapters.read_text() == chapters_json and len(engine2.texts) > 0
     with pool.connection() as conn:
         assert conn.execute("SELECT status FROM documents").fetchone()["status"] == "ready"
-        assert conn.execute("SELECT options FROM jobs ORDER BY id DESC").fetchone()["options"] == {}
+        assert conn.execute("SELECT state FROM narrations").fetchone()["state"] == "ready"
 
 
 def test_orphan_sweep(settings, pool):

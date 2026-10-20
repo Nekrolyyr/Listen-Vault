@@ -111,8 +111,8 @@ Operator commands, run from the folder that holds `docker-compose.yml`:
   link their PDF are fetched as PDF).
 - **Listen:** chapters become playable as they finish. The PDF follows the voice; scroll freely and
   press **Follow** to rejoin. The position is saved, so you can continue on another device.
-- **Voice:** Settings → voice, speed, citations. Then use "Regenerate audio" on a document. Voice samples
-  are in [docs/samples](docs/samples).
+- **Voice:** Settings → Audio (yours). Audio is made for each paper you add, with your settings; it is not
+  shared with anyone else. Papers you already have keep their voice; "Regenerate audio" uses the current settings.
 - **Pronunciation:** add words to `config/normalizer/lexicon.yaml`. It is read for every job.
 - **Overview:** the first track reads the paper's abstract. Chapters keep the names the paper gives them;
   the LLM only names untitled sections.

@@ -1,4 +1,4 @@
-"""The background pipeline for one job: fetch → OCR → structure → chapters → synthesis.
+"""The background pipeline for one job: fetch → OCR → structure → chapters; and narrate, the audio of one user.
 
 Each stage writes an artifact (see listen.storage) and is skipped when the artifact exists, so a job
 that was interrupted resumes where it stopped. Chapters become playable one by one.
@@ -16,7 +16,7 @@ from typing import Any
 from psycopg_pool import ConnectionPool
 from pypdf import PdfReader
 
-from .. import appsettings, embeddings, jobs
+from .. import appsettings, embeddings, jobs, narrations
 from ..config import Settings
 from ..storage import DocPaths
 from . import article, audio, boxes, chapters, embed, enrich, fetch, grobid, ocr, pdf_fallback, sentences, tagger
@@ -93,6 +93,8 @@ class Pipeline:
 
     # ------------------------------------------------------------ entry point
     def run(self, job: dict[str, Any]) -> None:
+        """The text of a paper: fetch, OCR, structure, keywords and the chapter plan. Audio is made per user by
+        narrate(); the audio of every holder of the paper is made again when the text changes."""
         document_id = job["document_id"]
         paths = DocPaths(self.settings.docs_dir, document_id).ensure()
         options = job.get("options") or {}
@@ -111,24 +113,88 @@ class Pipeline:
             with self.pool.connection() as conn, conn.transaction():
                 if redo in ("ocr", "structure", "chapters"):
                     conn.execute("DELETE FROM chapters WHERE document_id = %s", (document_id,))
-                else:
-                    conn.execute("UPDATE chapters SET audio_file = NULL, duration_s = NULL WHERE document_id = %s",
-                                 (document_id,))
-                    conn.execute("DELETE FROM sentences WHERE chapter_id IN "
-                                 "(SELECT id FROM chapters WHERE document_id = %s)", (document_id,))
+                # the text may have changed: every narration of the paper is made again, for each holder
+                for holder in conn.execute("SELECT user_id FROM library_entries WHERE document_id = %s",
+                                           (document_id,)).fetchall():
+                    narrations.take(conn, document_id, holder["user_id"])
+                    narrations.queue(conn, document_id, holder["user_id"])
                 # Do not redo again if this job is retried or resumed after a restart.
                 conn.execute("UPDATE jobs SET options = options - 'from' WHERE id = %s", (job["id"],))
-
-        with self.pool.connection() as conn:
-            prefs = appsettings.get_all(conn)
 
         self._fetch(job, paths)
         self._ocr(job, paths)
         doc = self._structure(job, paths)
         self._embed(job, doc)
         self._enrich(job, paths, doc)
-        plans = self._chapters(job, paths, doc, prefs)
-        self._synthesize(job, paths, doc, plans, prefs)
+        self._chapters(job, paths, doc)
+
+    def narrate(self, job: dict[str, Any]) -> str:
+        """One user's audio for a paper, with that user's audio settings. Chapters already made are kept, so a stopped
+        narration resumes. Returns "deferred" when the paper is not ready yet (its job waits and is tried again)."""
+        document_id, user_id = job["document_id"], job["user_id"]
+        if user_id is None:
+            raise PipelineError("The audio was requested without a user")
+        row = self._doc_row(document_id)
+        if row["status"] == "failed":
+            raise PipelineError("The paper could not be processed, so there is no audio for it")
+        if row["status"] != "ready":
+            return "deferred"
+        paths = DocPaths(self.settings.docs_dir, document_id).ensure()
+        with self.pool.connection() as conn, conn.transaction():
+            prefs = appsettings.get_all(conn, user_id)
+            narration = conn.execute(
+                "INSERT INTO narrations (document_id, user_id, state, settings) VALUES (%s, %s, 'running', %s) "
+                "ON CONFLICT (document_id, user_id) DO UPDATE SET state = 'running', error = NULL, "
+                "settings = CASE WHEN narrations.state = 'ready' THEN narrations.settings ELSE EXCLUDED.settings END, "
+                "updated_at = now() RETURNING id, settings",
+                (document_id, user_id, json.dumps(prefs))).fetchone()
+        narration_id = narration["id"]
+        # the settings the audio is made with: the ones it was started with
+        prefs = {**prefs, **(narration["settings"] or {})}
+        doc = Document.load(paths.structure)
+        plans = chapters.load(paths.chapters)
+        normalizer = Normalizer.from_file(self.settings.lexicon_path, prefs["citations"])
+        report = self._progress(job["id"], "audio")
+        total = len(plans)
+        for idx in range(total):
+            report(idx, total)
+            with self.pool.connection() as conn:
+                made = conn.execute("SELECT 1 FROM narration_chapters WHERE narration_id = %s AND idx = %s",
+                                    (narration_id, idx)).fetchone()
+            if made:
+                continue
+            engine = self._engine_for(prefs)
+            segments = (overview_segments(doc, plans[0], normalizer) if idx == 0
+                        else chapter_segments(plans[idx], normalizer))
+            out = paths.root / "narrations" / str(narration_id) / f"{idx}.m4a"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            duration, timed = audio.render(engine, segments, out, lambda: report(idx, total))
+            with self.pool.connection() as conn, conn.transaction():
+                if conn.execute("SELECT 1 FROM narrations WHERE id = %s", (narration_id,)).fetchone() is None:
+                    out.unlink(missing_ok=True)
+                    raise Cancelled()  # removed while it was being made
+                conn.execute("DELETE FROM narration_sentences WHERE narration_id = %s AND chapter_idx = %s",
+                             (narration_id, idx))
+                with conn.cursor() as cur:
+                    cur.executemany(
+                        "INSERT INTO narration_sentences (narration_id, chapter_idx, idx, text, page, start_s, end_s, "
+                        "rects) VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)",
+                        [(narration_id, idx, i, t.text, t.page, t.start_s, t.end_s,
+                          json.dumps(t.rects) if t.rects else None) for i, t in enumerate(timed)],
+                    )
+                conn.execute(
+                    "INSERT INTO narration_chapters (narration_id, idx, audio_file, duration_s, bytes) "
+                    "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (narration_id, idx) DO UPDATE SET "
+                    "audio_file = EXCLUDED.audio_file, duration_s = EXCLUDED.duration_s, bytes = EXCLUDED.bytes",
+                    (narration_id, idx, out.relative_to(paths.root).as_posix(), duration, out.stat().st_size))
+        with self.pool.connection() as conn, conn.transaction():
+            conn.execute(
+                "UPDATE narrations n SET state = 'ready', error = NULL, updated_at = now(), "
+                "duration_s = (SELECT sum(duration_s) FROM narration_chapters WHERE narration_id = n.id), "
+                "bytes = (SELECT coalesce(sum(bytes), 0) FROM narration_chapters WHERE narration_id = n.id) "
+                "WHERE id = %s", (narration_id,))
+        report(total, total)
+        return "done"
 
     # ------------------------------------------------------------ stages
     def _fetch(self, job, paths: DocPaths) -> None:
@@ -278,7 +344,7 @@ class Pipeline:
         fallback = pdf_fallback.parse_pdf(pdf)
         return fallback
 
-    def _chapters(self, job, paths: DocPaths, doc: Document, prefs) -> list[chapters.ChapterPlan]:
+    def _chapters(self, job, paths: DocPaths, doc: Document) -> list[chapters.ChapterPlan]:
         if paths.chapters.exists():
             plans = chapters.load(paths.chapters)
         else:
@@ -304,43 +370,6 @@ class Pipeline:
                         (job["document_id"], idx, p.kind, p.title, p.intro, p.start_page, p.word_count),
                     )
         return plans
-
-    def _synthesize(self, job, paths: DocPaths, doc: Document, plans, prefs) -> None:
-        normalizer = Normalizer.from_file(self.settings.lexicon_path, prefs["citations"])
-        report = self._progress(job["id"], "synthesis")
-        with self.pool.connection() as conn:
-            rows = conn.execute("SELECT id, idx, audio_file FROM chapters WHERE document_id = %s ORDER BY idx",
-                                (job["document_id"],)).fetchall()
-        total = len(rows)
-        for n, row in enumerate(rows):
-            report(n, total)
-            out = paths.audio(row["idx"])
-            if row["audio_file"] and out.exists():
-                continue
-            engine = self._engine_for(prefs)
-            segments = (overview_segments(doc, plans[0], normalizer) if row["idx"] == 0
-                        else chapter_segments(plans[row["idx"]], normalizer))
-            duration, timed = audio.render(engine, segments, out, lambda: report(n, total))
-            with self.pool.connection() as conn, conn.transaction():
-                conn.execute("DELETE FROM sentences WHERE chapter_id = %s", (row["id"],))
-                with conn.cursor() as cur:
-                    cur.executemany(
-                        "INSERT INTO sentences (chapter_id, idx, text, page, start_s, end_s, rects) "
-                        "VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)",
-                        [(row["id"], i, t.text, t.page, t.start_s, t.end_s, json.dumps(t.rects) if t.rects else None)
-                         for i, t in enumerate(timed)],
-                    )
-                cur = conn.execute("UPDATE chapters SET audio_file = %s, duration_s = %s WHERE id = %s",
-                                   (out.name, duration, row["id"]))
-                if cur.rowcount == 0:
-                    raise Cancelled()
-        with self.pool.connection() as conn:
-            conn.execute(
-                "UPDATE documents SET duration_s = (SELECT sum(duration_s) FROM chapters WHERE document_id = %(id)s), "
-                "voice = %(voice)s, updated_at = now() WHERE id = %(id)s",
-                {"id": job["document_id"], "voice": f"{prefs['engine']}:{self._engine.voice if self._engine else prefs['voice']}"},
-            )
-        report(total, total)
 
 
 # ---------------------------------------------------------------- what gets spoken

@@ -7,7 +7,7 @@ import socket
 import time
 from uuid import UUID
 
-from .. import config, db, jobs, maintenance
+from .. import config, db, jobs, maintenance, narrations
 from ..storage import DocPaths
 from . import classify, qa, topics
 from .fetch import FetchError
@@ -20,7 +20,8 @@ log = logging.getLogger("listen.worker")
 IDLE_SLEEP_S = 3
 ORPHAN_SWEEP_S = 3600
 AREAS_CHECK_S = 60
-TOPICS_CHECK_S = 60  # the daily topic rebuild is checked once a minute
+TOPICS_CHECK_S = 60
+NARRATE_RETRY_S = 30  # a narration waits this long for its paper to be ready  # the daily topic rebuild is checked once a minute
 
 
 class Worker:
@@ -48,11 +49,22 @@ class Worker:
         try:
             if job["kind"] == "document":
                 self.pipeline.run(job)
+            elif job["kind"] == "narrate":
+                if self.pipeline.narrate(job) == "deferred":
+                    with self.pool.connection() as conn:
+                        narrations.defer(conn, job["id"], NARRATE_RETRY_S)
+                    return True
             else:
                 self._library_job(job)
         except Cancelled:
-            log.info("document %s was deleted; dropping its files", job["document_id"])
-            DocPaths(self.settings.docs_dir, job["document_id"]).remove()
+            if job["kind"] == "document":
+                log.info("document %s was deleted; dropping its files", job["document_id"])
+                DocPaths(self.settings.docs_dir, job["document_id"]).remove()
+            else:
+                log.info("job %s: its audio was removed while it was made", job["id"])
+                with self.pool.connection() as conn:
+                    if conn.execute("SELECT 1 FROM documents WHERE id = %s", (job["document_id"],)).fetchone() is None:
+                        DocPaths(self.settings.docs_dir, job["document_id"]).remove()  # the paper went too
             return True
         except Interrupted:
             with self.pool.connection() as conn:
@@ -86,6 +98,9 @@ class Worker:
     def _fail(self, job, message: str, retryable: bool) -> None:
         with self.pool.connection() as conn:
             retry = jobs.fail(conn, job, message, retryable)
+            if job["kind"] == "narrate" and not retry:
+                conn.execute("UPDATE narrations SET state = 'failed', error = %s, updated_at = now() "
+                             "WHERE document_id = %s AND user_id = %s", (message, job["document_id"], job["user_id"]))
         log.warning("job %s %s: %s", job["id"], "will be retried" if retry else "failed", message)
 
     def schedule_topics(self) -> None:
