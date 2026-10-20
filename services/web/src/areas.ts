@@ -9,11 +9,11 @@ export interface AreaInfo {
 
 let known: AreaInfo[] | null = null;
 
-/** The areas in the order the map shows them. Loaded once per page visit. */
+/** Every research area a paper can be filed in. Loaded once per page visit. */
 export async function areaList(): Promise<AreaInfo[]> {
   if (!known) {
     const overview = await api.overview();
-    known = overview.areas.map((a) => ({ id: a.id, name: a.name }));
+    known = overview.catalog;
   }
   return known;
 }

@@ -365,7 +365,8 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
 
     @app.get("/api/library/overview")
     def library_overview(request: Request):
-        """The map: every research area with the user's papers, unread and progress, and the papers that need a look."""
+        """The map: the research areas that have the user's papers (unread, progress), the names of all areas, and the
+        papers that need a look."""
         user_id = uid(request)
         with pool(request).connection() as conn:
             totals = conn.execute(
@@ -373,9 +374,17 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
                 "count(*) FILTER (WHERE d.status = 'failed') AS failed, coalesce(sum(nr.duration_s), 0) AS audio_s "
                 f"FROM {LIB_FROM} LEFT JOIN narrations nr ON nr.document_id = d.id AND nr.user_id = %(uid)s",
                 {"uid": user_id}).fetchone()
-            unplaced = conn.execute(
-                f"SELECT count(*) AS n FROM {LIB_FROM} LEFT JOIN document_areas a ON a.document_id = d.id "
-                "WHERE a.document_id IS NULL AND d.status <> 'failed'", {"uid": user_id}).fetchone()["n"]
+            # papers are placed by the library job 'areas', which runs after they are ready: while that job is open
+            # the unplaced ready papers are "being placed", and papers still in the queue are not placed yet
+            areas_open = conn.execute(
+                "SELECT EXISTS (SELECT 1 FROM jobs WHERE kind = 'areas' AND state IN ('queued', 'running')) AS open"
+            ).fetchone()["open"]
+            waiting = conn.execute(
+                f"SELECT count(*) FILTER (WHERE a.document_id IS NULL AND d.status = 'ready' AND NOT %(open)s) AS unplaced, "
+                "count(*) FILTER (WHERE a.document_id IS NULL AND d.status = 'ready' AND %(open)s) AS placing, "
+                "count(*) FILTER (WHERE d.status IN ('queued', 'processing')) AS processing "
+                f"FROM {LIB_FROM} LEFT JOIN document_areas a ON a.document_id = d.id",
+                {"uid": user_id, "open": areas_open}).fetchone()
             per_area = {r["area"]: r for r in conn.execute(
                 "SELECT u.area, count(*) AS papers, count(*) FILTER (WHERE le.listened) AS listened, "
                 "count(*) FILTER (WHERE NOT le.listened) AS unread "
@@ -395,22 +404,27 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
             attention = conn.execute(
                 "SELECT d.id, d.title, d.status, a.confidence, a.pinned, a.document_id AS placed "
                 f"FROM {LIB_FROM} LEFT JOIN document_areas a ON a.document_id = d.id "
-                "WHERE d.status = 'failed' OR a.document_id IS NULL OR (a.confidence = 'low' AND NOT a.pinned) "
-                "ORDER BY le.added_at DESC LIMIT 20", {"uid": user_id}).fetchall()
+                "WHERE d.status = 'failed' OR (a.document_id IS NULL AND d.status = 'ready' AND NOT %(open)s) "
+                "OR (a.confidence = 'low' AND NOT a.pinned) "
+                "ORDER BY le.added_at DESC LIMIT 20", {"uid": user_id, "open": areas_open}).fetchall()
         out_areas = []
-        for area_id in areas.IDS:
-            stats = per_area.get(area_id)
-            papers = stats["papers"] if stats else 0
-            listened = stats["listened"] if stats else 0
+        for area_id, stats in per_area.items():
+            if area_id not in areas.NAMES or not stats["papers"]:
+                continue
+            papers = stats["papers"]
+            listened = stats["listened"]
             out_areas.append({
                 "id": area_id, "name": areas.NAMES[area_id], "papers": papers,
-                "unread": stats["unread"] if stats else 0, "listened": listened,
-                "progress": round(listened / papers, 4) if papers else None,
+                "unread": stats["unread"], "listened": listened,
+                "progress": round(listened / papers, 4),
                 "topics": topics_by_area.get(area_id, [])[:3],
             })
+        out_areas.sort(key=lambda a: (-a["papers"], a["name"]))
         return {
             "papers": totals["papers"], "unread": totals["unread"],
-            "failed": totals["failed"], "audio_s": totals["audio_s"], "unplaced": unplaced, "areas": out_areas,
+            "failed": totals["failed"], "audio_s": totals["audio_s"], "areas": out_areas,
+            "processing": waiting["processing"], "placing": waiting["placing"], "unplaced": waiting["unplaced"],
+            "catalog": [{"id": a, "name": areas.NAMES[a]} for a in areas.IDS],
             "attention": [{"id": str(r["id"]), "title": r["title"] or "Untitled", "status": r["status"],
                            "reason": "failed" if r["status"] == "failed" else
                            "no area yet" if r["placed"] is None else "low confidence"} for r in attention],

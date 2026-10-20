@@ -118,7 +118,7 @@ export function readerView(id: string): View {
     qaSubmit,
   );
   const relatedList = h("ul", { class: "related-list" }, h("li", { class: "quiet" }, "Looking for related papers…"));
-  const relatedBox = h("section", { class: "related" }, h("h2", {}, "Related papers"), relatedList);
+  const relatedBox = h("section", { class: "related-papers" }, h("h2", {}, "Related papers"), relatedList);
   const qaBox = h("section", { class: "qa" }, h("h2", {}, "Ask about this paper"), qaForm, qaList, relatedBox);
   // Three columns when the reader is wide (document, chapters, questions); narrower, one pane at a time behind tabs.
   // The splitters between the columns only show in the wide layout.
@@ -541,8 +541,10 @@ export function readerView(id: string): View {
       const { papers } = await api.related(id);
       if (destroyed) return;
       relatedList.replaceChildren(...(papers.length
-        ? papers.map((p) => h("li", {}, h("span", { class: "related-title" }, p.title),
-            h("span", { class: "quiet" }, ` ${Math.round(p.similarity * 100)}%`)))
+        ? papers.map((p) => h("li", {},
+            h("a", { href: `/doc/${p.id}`, "data-link": true, class: "related-item", title: p.title },
+              h("span", { class: "related-title" }, p.title),
+              h("span", { class: "quiet" }, `${Math.round(p.similarity * 100)}%`))))
         : [h("li", { class: "quiet" }, "No related papers yet. They appear once the paper has been processed.")]));
     } catch {
       relatedList.replaceChildren(h("li", { class: "quiet" }, "Related papers are not available."));

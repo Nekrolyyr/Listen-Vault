@@ -70,34 +70,44 @@ export function homeView(): View {
       ? h("section", { class: "block" }, h("h2", {}, "Continue listening"), paperList(continuing, () => load(), ""))
       : null;
 
-    const map = h(
-      "section",
-      { class: "block" },
-      h("div", { class: "block-head" }, h("h2", {}, "Research areas"), h("span", { class: "quiet" }, "Each paper has one main area and up to two others")),
-      h(
-        "div",
-        { class: "tiles" },
-        ...o.areas.map((a) =>
-          cardLink(
-            `/areas/${a.id}`,
-            `tile${a.papers ? "" : " empty"}`,
-            h("span", { class: "tile-head" }, h("strong", {}, a.name), a.unread ? chip(`${a.unread} unread`, "unread") : null),
-            h("span", { class: "tile-count quiet" }, a.papers ? `${a.papers} ${a.papers === 1 ? "paper" : "papers"}` : "No papers yet"),
-            a.progress !== null ? bar(a.progress, `${Math.round(a.progress * 100)}% read`) : null,
-            h("span", { class: "tile-topics" }, ...a.topics.map((t) => chip(t.name, "topic-mini"))),
+    // Only the areas that have papers: the map grows with the library and is absent while it is empty.
+    const map = o.areas.length
+      ? h(
+          "section",
+          { class: "block" },
+          h("div", { class: "block-head" }, h("h2", {}, "Research areas"), h("span", { class: "quiet" }, "Each paper has one main area and up to two others")),
+          h(
+            "div",
+            { class: "tiles" },
+            ...o.areas.map((a) =>
+              cardLink(
+                `/areas/${a.id}`,
+                "tile",
+                h("span", { class: "tile-head" }, h("strong", {}, a.name), a.unread ? chip(`${a.unread} unread`, "unread") : null),
+                h("span", { class: "tile-count quiet" }, `${a.papers} ${a.papers === 1 ? "paper" : "papers"}`),
+                a.progress !== null ? bar(a.progress, `${Math.round(a.progress * 100)}% read`) : null,
+                h("span", { class: "tile-topics" }, ...a.topics.map((t) => chip(t.name, "topic-mini"))),
+              ),
+            ),
           ),
-        ),
-      ),
-    );
+        )
+      : null;
 
     const attention = [];
+    // Papers in the queue or being placed are progress, not something to act on; only ready papers without an area
+    // (and no placement running) need attention.
+    const progress = [
+      o.processing ? `${o.processing} ${o.processing === 1 ? "paper is" : "papers are"} queued or being processed.` : null,
+      o.placing ? `${o.placing} ${o.placing === 1 ? "paper is" : "papers are"} being placed in areas.` : null,
+    ].filter((line): line is string => line !== null);
+    const queue = progress.length ? h("div", { class: "notice info" }, ...progress.map((line) => h("span", {}, line))) : null;
     if (o.unplaced > 0) {
       attention.push(
         h(
           "div",
           { class: "notice" },
           h("span", {}, `${o.unplaced} ${o.unplaced === 1 ? "paper has" : "papers have"} no area yet.`),
-          h("span", { class: "hint" }, "An administrator places them."),
+          h("span", { class: "hint" }, "The library places papers on its own. Set an area by hand if one stays empty."),
         ),
       );
     }
@@ -133,7 +143,7 @@ export function homeView(): View {
       ? h("section", { class: "block" }, h("div", { class: "block-head" }, h("h2", {}, "Needs attention")), ...attention)
       : null;
 
-    return [header, strip, continueSection, map, needs].filter((x): x is HTMLElement => x !== null);
+    return [header, strip, continueSection, queue, map, needs].filter((x): x is HTMLElement => x !== null);
   }
 
   void load();

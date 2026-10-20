@@ -183,8 +183,16 @@ export interface Overview {
   unread: number;
   failed: number;
   audio_s: number;
+  /** Papers still in the queue or being processed. */
+  processing: number;
+  /** Ready papers whose area the library job is placing now. */
+  placing: number;
+  /** Ready papers with no area and no placement job running. */
   unplaced: number;
+  /** The areas that have papers in the library, most papers first. */
   areas: AreaTile[];
+  /** Every research area the library can file a paper in (for pickers and filters). */
+  catalog: { id: string; name: string }[];
   attention: { id: string; title: string; status: Doc["status"]; reason: "failed" | "no area yet" | "low confidence" }[];
 }
 

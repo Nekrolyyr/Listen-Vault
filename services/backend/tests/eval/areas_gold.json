@@ -3,17 +3,17 @@
  "papers": [
   {
    "title": "Visual protest material as empirical data",
-   "primary": "images",
+   "primary": "arts",
    "also": [
-    "movements"
+    "social"
    ],
    "reviewed": false
   },
   {
    "title": "Networks of Conflict and Cooperation",
-   "primary": "politics",
+   "primary": "social",
    "also": [
-    "movements"
+    "social"
    ],
    "reviewed": false
   },
@@ -21,56 +21,56 @@
    "title": "Transition Design: A Proposal for a New Area of Design Practice, Study, and Research",
    "primary": "other",
    "also": [
-    "health_env"
+    "environment"
    ],
    "reviewed": false
   },
   {
    "title": "Breaking the bubble: A case study on the echo chamber effect in Instagram",
-   "primary": "social_media",
+   "primary": "social",
    "also": [
-    "misinformation"
+    "social"
    ],
    "reviewed": false
   },
   {
    "title": "QUANTIFICATION OF ECHO CHAMBERS: A METHODOLOGICAL FRAMEWORK CONSIDERING MULTI-PARTY SYSTEMS Research paper",
-   "primary": "social_media",
+   "primary": "social",
    "also": [
-    "politics"
+    "social"
    ],
    "reviewed": false
   },
   {
    "title": "Unveiling Community Dynamics on Instagram Political Network",
-   "primary": "social_media",
+   "primary": "social",
    "also": [
-    "politics",
-    "digital_methods"
+    "social",
+    "computer_science"
    ],
    "reviewed": false
   },
   {
    "title": "The Role of Social Media in the Formation of Collective Consciousness and Contemporary Social Movements",
-   "primary": "movements",
+   "primary": "social",
    "also": [
-    "social_media"
+    "social"
    ],
    "reviewed": false
   },
   {
    "title": "Simple changes to content curation algorithms affect the beliefs people form in a collaborative filtering experiment",
-   "primary": "social_media",
+   "primary": "social",
    "also": [
-    "misinformation"
+    "social"
    ],
    "reviewed": false
   },
   {
    "title": "Measuring Networks in the Field",
-   "primary": "politics",
+   "primary": "social",
    "also": [
-    "digital_methods"
+    "computer_science"
    ],
    "reviewed": false
   }

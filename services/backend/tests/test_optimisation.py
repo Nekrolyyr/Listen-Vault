@@ -192,31 +192,31 @@ def _placement(primary, confidence="low", also=()):
 
 
 def test_exemplars_overrule_an_unsure_model_when_they_agree():
-    near = [("politics", 0.9), ("politics", 0.88), ("politics", 0.8), ("social_media", 0.7), ("politics", 0.6)]
-    placed, agreement = classify.settle(_placement("social_media"), near)
-    assert placed.primary == "politics" and placed.source == "exemplars" and placed.confidence == "medium"
-    assert placed.also == ["social_media"]
+    near = [("social", 0.9), ("social", 0.88), ("social", 0.8), ("computer_science", 0.7), ("social", 0.6)]
+    placed, agreement = classify.settle(_placement("computer_science"), near)
+    assert placed.primary == "social" and placed.source == "exemplars" and placed.confidence == "medium"
+    assert placed.also == ["computer_science"]
     assert agreement == 0.8  # four of the five exemplars are in the placed area
 
 
 def test_a_confident_model_is_not_overruled_but_its_agreement_is_kept():
-    near = [("politics", 0.9)] * 4 + [("social_media", 0.7)]
-    placed, agreement = classify.settle(_placement("social_media", confidence="high"), near)
-    assert placed.primary == "social_media" and placed.source == "llm"
+    near = [("social", 0.9)] * 4 + [("computer_science", 0.7)]
+    placed, agreement = classify.settle(_placement("computer_science", confidence="high"), near)
+    assert placed.primary == "computer_science" and placed.source == "llm"
     assert agreement == 0.2
 
 
 def test_no_neighbours_means_no_agreement():
-    placed, agreement = classify.settle(_placement("politics"), None)
-    assert placed.primary == "politics" and agreement is None
+    placed, agreement = classify.settle(_placement("social"), None)
+    assert placed.primary == "social" and agreement is None
 
 
 def test_neighbour_areas_pick_the_nearest_exemplars_and_skip_the_paper_itself():
-    pool = [("p1", "politics", [1.0, 0.0]), ("p2", "news", [0.0, 1.0]), ("self", "other", [1.0, 0.0])]
+    pool = [("p1", "social", [1.0, 0.0]), ("p2", "arts", [0.0, 1.0]), ("self", "other", [1.0, 0.0])]
     near = classify.neighbour_areas([1.0, 0.0], pool, "self")
-    assert [a for a, _ in near] == ["politics", "news"]
+    assert [a for a, _ in near] == ["social", "arts"]
     assert classify.neighbour_areas(None, pool, "self") is None
-    assert "Politics & elections (0.90)" in classify.evidence([("politics", 0.9)])
+    assert "Social Sciences (0.90)" in classify.evidence([("social", 0.9)])
 
 
 def test_a_prompt_with_evidence_is_sent_to_the_model():
@@ -228,10 +228,10 @@ def test_a_prompt_with_evidence_is_sent_to_the_model():
 
         def chat_json(self, user, schema, **kw):
             seen["user"] = user
-            return {"primary": areas.NAMES["politics"], "also": [], "confidence": "high"}
+            return {"primary": areas.NAMES["social"], "also": [], "confidence": "high"}
 
     placed = classify.llm_placement(Model(), "Title: x", hint="Papers the user filed as similar: a.")
-    assert placed.primary == "politics" and "Papers the user filed" in seen["user"]
+    assert placed.primary == "social" and "Papers the user filed" in seen["user"]
 
 
 # ---------------------------------------------------------------- topics from paper vectors

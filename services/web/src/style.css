@@ -392,13 +392,17 @@ body.is-dragging, body.is-dragging * { cursor: inherit; user-select: none; }
 
 /* ---- similarity graph ---- */
 .graph { display: grid; gap: 8px; }
-.graph-svg { width: 100%; height: auto; max-height: 72vh; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.graph-tools { display: flex; justify-content: flex-end; gap: 8px; }
+.graph-zoom { min-width: 44px; min-height: 44px; font-size: 16px; }
+.graph-svg { width: 100%; height: auto; max-height: 72vh; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); touch-action: none; cursor: grab; }
+.graph-svg:active { cursor: grabbing; }
 .graph-link { stroke: var(--muted); stroke-opacity: .35; transition: stroke-opacity .15s; }
 .graph-link.on { stroke: var(--accent); stroke-opacity: .9; }
 .graph-link.dim, .graph-node.dim { opacity: .18; }
 .graph-node { cursor: pointer; outline: none; transition: opacity .15s; }
-.graph-node circle { stroke: var(--surface); stroke-width: 2; }
-.graph-node:focus-visible circle { stroke: var(--accent); stroke-width: 3; }
+.graph-hit { fill: transparent; }
+.graph-node .graph-dot { stroke: var(--surface); stroke-width: 2; }
+.graph-node:focus-visible .graph-dot { stroke: var(--accent); stroke-width: 3; }
 .graph-label { font-size: 11px; fill: var(--text); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; pointer-events: none; }
 .graph-hint { margin: 0; }
 
@@ -507,6 +511,7 @@ a.stat:hover { border-color: var(--accent); }
 .tile-count { font-size: 13px; }
 .tile-topics { display: flex; flex-wrap: wrap; gap: 4px; }
 .notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-radius: 10px; background: var(--busy-soft); color: var(--busy); }
+.notice.info { background: var(--accent-soft); color: var(--accent); }
 .attention-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .attention-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
 .attention-row .dot { margin: 0; }
@@ -545,6 +550,14 @@ a.paper-title:hover { text-decoration: underline; }
 .group-label { font-weight: 600; }
 .topic-meta { margin: 0; }
 .topic-nav { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.related-papers { display: grid; gap: 6px; margin-top: 12px; }
+.related-papers h2 { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
+.related-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.related-list .quiet { font-size: 13px; color: var(--muted); }
+.related-item { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 6px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text); text-decoration: none; font-size: 14px; }
+.related-item:hover { border-color: var(--accent); }
+.related-item .related-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.related-item .quiet { flex: none; font-size: 12px; }
 .term-row, .related { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .related > .quiet { font-size: 13px; }
 .topic-tools { display: flex; }
