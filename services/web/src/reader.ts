@@ -1,5 +1,6 @@
 import { api, type DocDetail, type Question, type Sentence, type TextChapter } from "./api";
 import { stopAbstract } from "./abstract";
+import { areaName } from "./areas";
 import { authors, clock, duration, h, icon, toast } from "./dom";
 import type { View } from "./main";
 import { PdfView } from "./pdfview";
@@ -9,6 +10,9 @@ import { SpeedView } from "./speedview";
 
 const RATES = [0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
 const MODE_KEY = "lv.readMode";
+const HEADER_KEY = "lv.headerOpen";
+// the content is three columns from this width of the reader on; keep in step with the container query in style.css
+const WIDE_MIN = 1180;
 const SAVE_EVERY_MS = 10_000;
 
 export function readerView(id: string): View {
@@ -29,8 +33,60 @@ export function readerView(id: string): View {
   let lastSave = 0;
   let sentenceDragging = false;
 
-  const head = h("div", { class: "reader-head" });
-  const keywordBar = h("div", { class: "keyword-bar", "aria-label": "Keywords" });
+  // ---------------------------------------------------------------- header: a bar, and the paper's details when open
+  // Phones start with the bar only; wide screens show the details. The choice is remembered per viewer.
+  const storedHeader = storedValue(HEADER_KEY);
+  let headerOpen = storedHeader === null ? window.innerWidth > 900 : storedHeader === "open";
+  const detailsId = "reader-details";
+  const titleHeading = h("h1", {});
+  const statusDot = h("span", { class: "status-dot", "aria-hidden": "true" });
+  const headerToggle = h(
+    "button",
+    { type: "button", class: "icon-btn header-toggle", "aria-controls": detailsId, onclick: () => setHeaderOpen(!headerOpen, true) },
+    icon("chevron"),
+  );
+  const headerBar = h(
+    "div",
+    { class: "reader-head" },
+    h("a", { href: "/", "data-link": true, class: "back", "aria-label": "Back to library" }, icon("arrowLeft")),
+    h("div", { class: "reader-title" }, titleHeading),
+    statusDot,
+    headerToggle,
+  );
+  const metaLine = h("p", { class: "reader-meta" });
+  const sourceLink = h("a", { target: "_blank", rel: "noopener noreferrer", class: "btn small" }, "Source");
+  const makeAudioBtn = h("button", { type: "button", class: "btn small primary", onclick: makeAudio }, "Make audio");
+  const markReadLabel = h("span", { class: "label" }, "Mark as read");
+  const markReadBtn = h("button", { type: "button", class: "btn small", onclick: toggleRead }, icon("check"), markReadLabel);
+  const actions = h("div", { class: "reader-actions" }, markReadBtn, sourceLink, makeAudioBtn);
+  const tagList = h("ul", { class: "tag-list", "aria-label": "Your tags" });
+  const tagInput = h("input", { type: "text", maxlength: 32, placeholder: "Tag name", "aria-label": "Tag name" }) as HTMLInputElement;
+  const tagForm = h(
+    "form",
+    { class: "tag-form", hidden: true, onsubmit: addTag },
+    tagInput,
+    h("button", { type: "submit", class: "btn small primary" }, "Add"),
+    h("button", { type: "button", class: "btn small", onclick: closeTagForm }, "Cancel"),
+  );
+  const addTagBtn = h("button", { type: "button", class: "btn small", onclick: openTagForm }, icon("plus"), "Add tag");
+  tagInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeTagForm();
+  });
+  const keywordChips = h("div", { class: "keyword-chips" });
+  const keywordsSection = h("details", { class: "header-section" }, h("summary", {}, "Keywords"), keywordChips);
+  const areasLine = h("p", { class: "header-text" });
+  const areasSection = h("details", { class: "header-section" }, h("summary", {}, "Areas and topics"), areasLine);
+  const details = h(
+    "div",
+    { class: "reader-details", id: detailsId },
+    metaLine,
+    actions,
+    h("section", { class: "header-tags" }, h("h2", {}, "Tags"), tagList, addTagBtn, tagForm),
+    keywordsSection,
+    areasSection,
+  );
+  const head = h("header", { class: "reader-header" }, headerBar, details);
+
   const docPane = h("div", { class: "doc-pane" }, h("p", { class: "pane-message" }, "Loading…"));
   const nowReading = h("div", { class: "now-reading", "aria-live": "off" });
   const chapterList = h("ol", { class: "chapter-list" });
@@ -64,18 +120,22 @@ export function readerView(id: string): View {
   const relatedList = h("ul", { class: "related-list" }, h("li", { class: "quiet" }, "Looking for related papers…"));
   const relatedBox = h("section", { class: "related" }, h("h2", {}, "Related papers"), relatedList);
   const qaBox = h("section", { class: "qa" }, h("h2", {}, "Ask about this paper"), qaForm, qaList, relatedBox);
-  // Splitters: drag to resize the document and the side panel, and the chapters and the question box.
-  const splitV = splitter("v", "Resize the side panel");
-  const splitH = splitter("h", "Resize the question box");
-  const sidePane = h("aside", { class: "side-pane", "aria-label": "Chapters" }, nowReading, chapterList, splitH, qaBox);
+  // Three columns when the reader is wide (document, chapters, questions); narrower, one pane at a time behind tabs.
+  // The splitters between the columns only show in the wide layout.
+  const splitA = splitter("Resize the chapters column");
+  const splitB = splitter("Resize the questions column");
+  const chaptersPane = h("aside", { class: "chapters-pane", "aria-label": "Chapters" }, nowReading, chapterList);
+  const qaPane = h("aside", { class: "qa-pane", "aria-label": "Questions" }, qaBox);
   const tabs = h(
     "div",
-    { class: "pane-tabs", role: "tablist" },
+    { class: "pane-tabs reader-tabs", role: "tablist" },
     h("button", { type: "button", role: "tab", "aria-selected": "true", onclick: () => showTab("doc") }, "Document"),
     h("button", { type: "button", role: "tab", "aria-selected": "false", onclick: () => showTab("chapters") }, "Chapters"),
+    h("button", { type: "button", role: "tab", "aria-selected": "false", onclick: () => showTab("qa") }, "Questions"),
   );
-  const body = h("div", { class: "reader-body tab-doc" }, docPane, splitV, sidePane);
+  const body = h("div", { class: "reader-body tab-doc" }, docPane, splitA, chaptersPane, splitB, qaPane);
   const tabButtons = tabs.querySelectorAll("button");
+  const main = h("div", { class: "reader-main" }, tabs, body);
 
   // ---------------------------------------------------------------- player bar
   const playBtn = h("button", { type: "button", class: "play", "aria-label": "Play", onclick: () => player?.toggle() }, icon("play"));
@@ -86,7 +146,7 @@ export function readerView(id: string): View {
   const waiting = h("div", { class: "bar-waiting", hidden: true });
   const rateSelect = h(
     "select",
-    { "aria-label": "Playback speed", onchange: (e: Event) => player?.setRate(Number((e.target as HTMLSelectElement).value)) },
+    { class: "rate-select", "aria-label": "Playback speed", onchange: (e: Event) => player?.setRate(Number((e.target as HTMLSelectElement).value)) },
     ...RATES.map((r) => h("option", { value: r, selected: r === 1 }, `${r}×`)),
   ) as HTMLSelectElement;
   const followBtn = h(
@@ -96,23 +156,21 @@ export function readerView(id: string): View {
     h("span", { class: "label" }, "Follow"),
   );
   // Listen | Read: the same position, read aloud or one word at a time (the read controls replace the audio controls)
-  const listenBtn = h("button", { type: "button", "aria-pressed": "true", onclick: () => setMode("listen") }, "Listen");
-  const readBtn = h("button", { type: "button", "aria-pressed": "false", onclick: () => setMode("read") }, "Read");
+  const listenBtn = h("button", { type: "button", "aria-pressed": "true", onclick: () => setMode("listen") }, icon("headphones"), h("span", {}, "Listen"));
+  const readBtn = h("button", { type: "button", "aria-pressed": "false", onclick: () => setMode("read") }, icon("book"), h("span", {}, "Read"));
   const modeSwitch = h("div", { class: "mode-switch", role: "group", "aria-label": "Listen or speed read" }, listenBtn, readBtn);
   const sentenceSeek = h("input", { type: "range", min: 0, max: 1, step: 1, value: 0, "aria-label": "Sentence" }) as HTMLInputElement;
   const sentenceNow = h("span", { class: "time" }, "0 / 0");
   const wpmSeek = h("input", { type: "range", min: WPM_MIN, max: WPM_MAX, step: 10, value: WPM_DEFAULT, "aria-label": "Words per minute" }) as HTMLInputElement;
   const wpmNow = h("span", { class: "time" }, `${WPM_DEFAULT} wpm`);
-  const readBar = h(
-    "div",
-    { class: "read-bar" },
-    h("div", { class: "bar-seek" }, sentenceNow, sentenceSeek),
-    h("div", { class: "bar-seek" }, wpmNow, wpmSeek),
-  );
+  // the read controls take the places of the seek bar and the transport row, so the bar keeps its height in both modes
+  const readSeek = h("div", { class: "read-seek" }, sentenceNow, sentenceSeek);
+  const readWpm = h("div", { class: "read-wpm" }, wpmNow, wpmSeek);
   let seeking = false;
   seek.addEventListener("input", () => {
     seeking = true;
     timeNow.textContent = clock(Number(seek.value));
+    paint(seek);
   });
   seek.addEventListener("change", () => {
     player?.seekTo(Number(seek.value));
@@ -130,14 +188,18 @@ export function readerView(id: string): View {
       playBtn,
       h("button", { type: "button", class: "icon-btn", "aria-label": "Forward 15 seconds", onclick: () => player?.skip(15) }, icon("fwd15")),
       h("button", { type: "button", class: "icon-btn", "aria-label": "Next chapter", onclick: () => player?.next() }, icon("next")),
+      rateSelect,
+      followBtn,
     ),
     h("div", { class: "bar-seek" }, timeNow, seek, timeEnd),
-    readBar,
-    h("div", { class: "bar-extra" }, modeSwitch, rateSelect, followBtn),
+    readSeek,
+    readWpm,
+    h("div", { class: "bar-mode" }, modeSwitch),
   );
 
   sentenceSeek.addEventListener("input", () => {
     sentenceDragging = true;
+    paint(sentenceSeek);
     speed.preview(Number(sentenceSeek.value));
   });
   sentenceSeek.addEventListener("change", () => {
@@ -174,12 +236,24 @@ export function readerView(id: string): View {
     },
   });
 
-  function showTab(tab: "doc" | "chapters"): void {
-    // the reading stage is hidden on the Chapters tab, so reading pauses there
-    if (tab === "chapters") speed.stop();
+  function showTab(tab: "doc" | "chapters" | "qa"): void {
+    // the reading stage is hidden on the other tabs, so reading pauses there
+    if (tab !== "doc") speed.stop();
     body.classList.toggle("tab-doc", tab === "doc");
     body.classList.toggle("tab-chapters", tab === "chapters");
-    tabButtons.forEach((b, i) => b.setAttribute("aria-selected", String((i === 0) === (tab === "doc"))));
+    body.classList.toggle("tab-qa", tab === "qa");
+    const order = ["doc", "chapters", "qa"];
+    tabButtons.forEach((b, i) => b.setAttribute("aria-selected", String(order[i] === tab)));
+  }
+
+  function setHeaderOpen(open: boolean, save = false): void {
+    headerOpen = open;
+    head.classList.toggle("open", open);
+    details.hidden = !open;
+    headerToggle.setAttribute("aria-expanded", String(open));
+    headerToggle.setAttribute("aria-label", open ? "Hide details" : "Show details");
+    headerToggle.title = open ? "Hide details" : "Show details";
+    if (save) storeValue(HEADER_KEY, open ? "open" : "closed");
   }
 
   function saveNow(): void {
@@ -195,6 +269,7 @@ export function readerView(id: string): View {
     const { index, count } = speed.position;
     sentenceSeek.max = String(Math.max(0, count - 1));
     sentenceSeek.value = String(index);
+    paint(sentenceSeek);
     sentenceNow.textContent = count ? `${index + 1} / ${count}` : "0 / 0";
   }
 
@@ -213,6 +288,7 @@ export function readerView(id: string): View {
     wpm = clampWpm(value);
     speed.setWpm(wpm);
     wpmSeek.value = String(wpm);
+    paint(wpmSeek);
     wpmNow.textContent = `${wpm} wpm`;
     if (persist) api.saveSettings({ reading_wpm: wpm }).catch((err) => toast((err as Error).message, "error"));
   }
@@ -306,35 +382,100 @@ export function readerView(id: string): View {
             : doc.status === "ready"
               ? `Generating audio · ${doc.chapters.filter((c) => c.ready).length} of ${doc.chapters.length || "…"} chapters ready`
               : `Processing · ${doc.job?.stage ?? "queued"}`;
-    head.replaceChildren(
-      h("a", { href: "/", "data-link": true, class: "back", "aria-label": "Back to library" }, icon("arrowLeft")),
-      h(
-        "div",
-        { class: "reader-title" },
-        h("h1", {}, doc.title),
-        h("p", {}, [authors(doc.authors), doc.published?.slice(0, 4), status].filter(Boolean).join(" · ")),
-      ),
-      ...(doc.source_url ? [h("a", { href: doc.source_url, target: "_blank", rel: "noopener noreferrer", class: "btn small" }, "Source")] : []),
-      ...(noAudio
-        ? [h("button", {
-          type: "button", class: "btn small primary",
-          onclick: async () => {
-            try {
-              await api.makeAudio(id);
-              toast("Making your audio. It plays as each chapter is ready.");
-              void refresh();
-            } catch (e) {
-              toast((e as Error).message, "error");
-            }
-          },
-        }, "Make audio")]
-        : []),
-    );
+    const tone = doc.status === "failed" ? "bad" : doc.status === "ready" && doc.audio_state === "ready" ? "ok" : "busy";
+    titleHeading.textContent = doc.title;
+    statusDot.dataset.tone = tone;
+    statusDot.title = status;
+    metaLine.textContent = [authors(doc.authors), doc.published?.slice(0, 4), status].filter(Boolean).join(" · ");
+    sourceLink.hidden = !doc.source_url;
+    if (doc.source_url) sourceLink.href = doc.source_url;
+    makeAudioBtn.hidden = !noAudio;
+    markReadLabel.textContent = doc.listened ? "Marked as read" : "Mark as read";
+    markReadBtn.setAttribute("aria-pressed", String(doc.listened));
     qaSubmit.disabled = doc.status !== "ready";
     qaText.disabled = doc.status !== "ready";
     const terms = [...doc.keywords.task, ...doc.keywords.method, ...doc.keywords.topic, ...doc.keywords.keyword];
-    keywordBar.replaceChildren(...terms.slice(0, 14).map((t) => h("span", { class: "chip" }, t)));
-    keywordBar.hidden = terms.length === 0;
+    keywordChips.replaceChildren(...terms.map((t) => h("span", { class: "chip" }, t)));
+    keywordsSection.hidden = terms.length === 0;
+    const areas = doc.areas ? [doc.areas.primary, ...doc.areas.also].map(areaName) : [];
+    areasLine.textContent = [...areas, ...(doc.topics ?? []).map((t) => t.name)].join(" · ");
+    areasSection.hidden = areasLine.textContent === "";
+    renderTags();
+  }
+
+  function renderTags(): void {
+    const tags = doc?.tags ?? [];
+    tagList.replaceChildren(
+      ...(tags.length
+        ? tags.map((t) =>
+            h(
+              "li",
+              { class: "tag-chip" },
+              h("span", {}, t),
+              h("button", {
+                type: "button",
+                class: "tag-remove",
+                title: `Remove ${t}`,
+                "aria-label": `Remove tag ${t}`,
+                onclick: () => void saveTags(tags.filter((x) => x !== t)),
+              }, icon("x")),
+            ),
+          )
+        : [h("li", { class: "quiet" }, "No tags yet.")]),
+    );
+  }
+
+  /** Stores the tags the paper should have. False, with the reason in a toast, when the server refuses them. */
+  async function saveTags(next: string[]): Promise<boolean> {
+    if (!doc) return false;
+    try {
+      doc.tags = (await api.setTags(id, next)).tags;
+      renderTags();
+      return true;
+    } catch (e) {
+      toast((e as Error).message, "error");
+      return false;
+    }
+  }
+
+  async function addTag(e: Event): Promise<void> {
+    e.preventDefault();
+    const tag = tagInput.value.trim();
+    if (!tag || !doc) return;
+    if (await saveTags([...doc.tags, tag])) closeTagForm();
+  }
+
+  function openTagForm(): void {
+    tagForm.hidden = false;
+    addTagBtn.hidden = true;
+    tagInput.focus();
+  }
+
+  function closeTagForm(): void {
+    tagForm.hidden = true;
+    addTagBtn.hidden = false;
+    tagInput.value = "";
+    addTagBtn.focus();
+  }
+
+  async function toggleRead(): Promise<void> {
+    if (!doc) return;
+    try {
+      doc.listened = (await api.patch(id, { listened: !doc.listened })).listened;
+      renderHead();
+    } catch (e) {
+      toast((e as Error).message, "error");
+    }
+  }
+
+  async function makeAudio(): Promise<void> {
+    try {
+      await api.makeAudio(id);
+      toast("Making your audio. It plays as each chapter is ready.");
+      void refresh();
+    } catch (e) {
+      toast((e as Error).message, "error");
+    }
   }
 
   function renderChapters(): void {
@@ -461,6 +602,7 @@ export function readerView(id: string): View {
     if (!seeking) {
       seek.max = String(a.duration || 1);
       seek.value = String(a.currentTime || 0);
+      paint(seek);
       timeNow.textContent = clock(a.currentTime);
     }
     timeEnd.textContent = clock(a.duration || 0);
@@ -577,32 +719,38 @@ export function readerView(id: string): View {
   };
   document.addEventListener("keydown", onKey);
 
-  // ---------------------------------------------------------------- splitter behaviour
-  const SIDE_KEY = "lv.sideWidth";
-  const QA_KEY = "lv.qaHeight";
-  const SIDE_DEFAULT = 380;
-  const QA_DEFAULT = 300;
-  const SIDE_MIN = 280;
+  // ---------------------------------------------------------------- column widths (wide layout)
+  const CHAPTERS_KEY = "lv.chaptersWidth";
+  const QA_KEY = "lv.qaWidth";
+  const CHAPTERS_DEFAULT = 320;
+  const QA_DEFAULT = 340;
+  const CHAPTERS_MIN = 240;
+  const QA_MIN = 260;
   const DOC_MIN = 360;
-  const QA_MIN = 140;
-  const CHAPTERS_MIN = 90;
+  const SPLITTER_PX = 6;
+  let chaptersW = storedNumber(CHAPTERS_KEY) ?? CHAPTERS_DEFAULT;
+  let qaW = storedNumber(QA_KEY) ?? QA_DEFAULT;
 
-  function setSideWidth(px: number, save = true): void {
+  /** The width a column can take while the document keeps DOC_MIN and the other column keeps `other`. */
+  function fit(px: number, min: number, other: number): number {
     // not laid out yet (set at creation, before insertion): no room limit to apply
-    const room = body.clientWidth ? body.clientWidth - DOC_MIN : Infinity;
-    const width = Math.round(Math.min(Math.max(px, SIDE_MIN), Math.max(SIDE_MIN, room)));
-    body.style.setProperty("--side-w", `${width}px`);
-    if (save) storeNumber(SIDE_KEY, width);
+    const room = body.clientWidth ? body.clientWidth - DOC_MIN - 2 * SPLITTER_PX - other : Infinity;
+    return Math.round(Math.min(Math.max(px, min), Math.max(min, room)));
   }
 
-  function setQaHeight(px: number, save = true): void {
-    const room = sidePane.clientHeight ? sidePane.clientHeight - CHAPTERS_MIN : Infinity;
-    const height = Math.round(Math.min(Math.max(px, QA_MIN), Math.max(QA_MIN, room)));
-    sidePane.style.setProperty("--qa-h", `${height}px`);
-    if (save) storeNumber(QA_KEY, height);
+  function setChaptersWidth(px: number, save = true): void {
+    chaptersW = fit(px, CHAPTERS_MIN, qaW);
+    body.style.setProperty("--chapters-w", `${chaptersW}px`);
+    if (save) storeNumber(CHAPTERS_KEY, chaptersW);
   }
 
-  /** Pointer drag on a splitter; the callback gets the pointer position in the pane's coordinates. */
+  function setQaWidth(px: number, save = true): void {
+    qaW = fit(px, QA_MIN, chaptersW);
+    body.style.setProperty("--qa-w", `${qaW}px`);
+    if (save) storeNumber(QA_KEY, qaW);
+  }
+
+  /** Pointer drag on a splitter; the callback gets the pointer position. */
   function dragging(handle: HTMLElement, onMove: (e: PointerEvent) => void): void {
     handle.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
@@ -624,36 +772,33 @@ export function readerView(id: string): View {
     });
   }
 
-  dragging(splitV, (e) => setSideWidth(body.getBoundingClientRect().right - e.clientX));
-  dragging(splitH, (e) => setQaHeight(sidePane.getBoundingClientRect().bottom - e.clientY));
-  // keyboard: arrows move the splitter, double-click or Home resets it
-  splitV.addEventListener("keydown", (e) => {
+  dragging(splitA, (e) => setChaptersWidth(chaptersPane.getBoundingClientRect().right - e.clientX));
+  dragging(splitB, (e) => setQaWidth(body.getBoundingClientRect().right - e.clientX));
+  // keyboard: arrows move a splitter, Home or double-click resets it
+  splitA.addEventListener("keydown", (e) => {
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
-      setSideWidth(sideWidth() + (e.key === "ArrowLeft" ? 24 : -24));
-    }
+      setChaptersWidth(chaptersW + (e.key === "ArrowLeft" ? 24 : -24));
+    } else if (e.key === "Home") setChaptersWidth(CHAPTERS_DEFAULT);
   });
-  splitH.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+  splitB.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
-      setQaHeight(qaHeight() + (e.key === "ArrowUp" ? 24 : -24));
-    }
+      setQaWidth(qaW + (e.key === "ArrowLeft" ? 24 : -24));
+    } else if (e.key === "Home") setQaWidth(QA_DEFAULT);
   });
-  splitV.addEventListener("dblclick", () => setSideWidth(SIDE_DEFAULT));
-  splitH.addEventListener("dblclick", () => setQaHeight(QA_DEFAULT));
-  splitV.addEventListener("keydown", (e) => e.key === "Home" && setSideWidth(SIDE_DEFAULT));
-  splitH.addEventListener("keydown", (e) => e.key === "Home" && setQaHeight(QA_DEFAULT));
-
-  const sideWidth = () => sidePane.getBoundingClientRect().width;
-  const qaHeight = () => qaBox.getBoundingClientRect().height;
-  setSideWidth(storedNumber(SIDE_KEY) ?? SIDE_DEFAULT, false);
-  setQaHeight(storedNumber(QA_KEY) ?? QA_DEFAULT, false);
-  // keep the panes inside the window when it is resized
-  const onWindowResize = () => {
-    setSideWidth(sideWidth(), false);
-    setQaHeight(qaHeight(), false);
-  };
-  window.addEventListener("resize", onWindowResize);
+  splitA.addEventListener("dblclick", () => setChaptersWidth(CHAPTERS_DEFAULT));
+  splitB.addEventListener("dblclick", () => setQaWidth(QA_DEFAULT));
+  setChaptersWidth(chaptersW, false);
+  setQaWidth(qaW, false);
+  // The layout follows the width of the reader. The columns only show when it is wide, so only then do they refit.
+  const isWide = () => main.clientWidth >= WIDE_MIN;
+  const resizes = new ResizeObserver(() => {
+    if (!isWide()) return;
+    setChaptersWidth(chaptersW, false);
+    setQaWidth(qaW, false);
+  });
+  resizes.observe(main);
 
   // Background timers are throttled: catch up on chapter readiness as soon as the page is shown again.
   const onVisible = () => {
@@ -661,14 +806,15 @@ export function readerView(id: string): View {
   };
   document.addEventListener("visibilitychange", onVisible);
 
-  const el = h("section", { class: "reader" }, head, keywordBar, tabs, body, bar);
+  setHeaderOpen(headerOpen);
+  const el = h("section", { class: "reader" }, head, main, bar);
   refresh(true);
   return {
     el,
     title: "Reader",
     destroy: () => {
       destroyed = true;
-      window.removeEventListener("resize", onWindowResize);
+      resizes.disconnect();
       window.clearTimeout(poll);
       window.clearTimeout(qaTimer);
       document.removeEventListener("keydown", onKey);
@@ -680,15 +826,23 @@ export function readerView(id: string): View {
   };
 }
 
-function splitter(orientation: "v" | "h", label: string): HTMLElement {
+function splitter(label: string): HTMLElement {
   return h("div", {
-    class: `splitter ${orientation}`,
+    class: "splitter v",
     role: "separator",
-    "aria-orientation": orientation === "v" ? "vertical" : "horizontal",
+    "aria-orientation": "vertical",
     "aria-label": label,
     title: "Drag to resize. Double-click to reset.",
     tabindex: 0,
   });
+}
+
+/** Shows how far a range input is along, for the track's filled part (style.css). */
+function paint(input: HTMLInputElement): void {
+  const min = Number(input.min);
+  const span = Number(input.max) - min;
+  const pct = span > 0 ? ((Number(input.value) - min) / span) * 100 : 0;
+  input.style.setProperty("--fill", `${Math.min(100, Math.max(0, pct))}%`);
 }
 
 function storedNumber(key: string): number | null {

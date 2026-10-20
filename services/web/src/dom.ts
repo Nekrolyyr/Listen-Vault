@@ -46,6 +46,12 @@ const ICONS: Record<string, string> = {
   globe: '<path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.7 3.6 5.7 3.6 9s-1.1 6.3-3.6 9c-2.5-2.7-3.6-5.7-3.6-9s1.1-6.3 3.6-9z"/>',
   more: '<circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/>',
   follow: '<path d="M12 5v10M7 10l5 5 5-5M5 20h14"/>',
+  headphones: '<path d="M4 14v-2a8 8 0 0 1 16 0v2M4 14h3.5v5H4zM16.5 14H20v5h-3.5z"/>',
+  book: '<path d="M12 6.5C9.5 4.8 6.5 4.4 3 5v13c3.5-.6 6.5-.2 9 1.5 2.5-1.7 5.5-2.1 9-1.5V5c-3.5-.6-6.5-.2-9 1.5zM12 6.5v13"/>',
+  tag: '<path d="M3.5 12.3V4.5a1 1 0 0 1 1-1h7.8l8.2 8.2a1 1 0 0 1 0 1.4l-7.4 7.4a1 1 0 0 1-1.4 0z"/><circle cx="8" cy="8" r="1.4" fill="currentColor" stroke="none"/>',
+  chevron: '<path d="M6 9.5l6 6 6-6"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
 };
 
 export function icon(name: keyof typeof ICONS | string, label?: string): SVGSVGElement {

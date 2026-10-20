@@ -1,6 +1,20 @@
 # Plan: overhaul the paper page
 
-Status: plan, not started. Scope: the paper page (`services/web/src/reader.ts`, its CSS in `style.css`), the tags
+Status: implemented (not committed; the working tree already had unrelated uncommitted changes). Checked in
+headless Chromium at 390, 768, 1024 and 1600 px with the API stubbed, and by the backend tests (244 passing).
+Deviations and choices made while building:
+
+- The bottom bar is 129 px on phones (target 130) and 73 px on desktop; the height is the same in Listen and Read.
+  The rows are fixed, so the read controls replace the seek and transport rows without changing the height.
+- Sliders: a 24 px thumb, a 40 px hit area. Buttons and the mode switch: 44 px.
+- The details under the header open by default on screens wider than 900 px and start closed on phones. The choice
+  is remembered per viewer. Details are laid out in a responsive grid and capped at 42% of the height.
+- Between 900 and 1180 px the content uses the tabs (the plan's rule); the old two-column layout is gone.
+- Column widths (chapters 320 px, questions 340 px) are remembered per viewer. The old keys `lv.sideWidth` and
+  `lv.qaHeight` are no longer read.
+- The rule-based "Mark as read" uses the existing per-user flag; the copy "listened" is now "read" in the library.
+
+Original plan: Scope: the paper page (`services/web/src/reader.ts`, its CSS in `style.css`), the tags
 and read marker it needs in the API. Branch: `feature/multi-user`. Each phase ends with a commit and a green run of
 `npm run build` (web) and the backend tests.
 

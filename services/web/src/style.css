@@ -139,7 +139,7 @@ progress:not([value]) { background: linear-gradient(90deg, var(--surface-2) 30%,
 }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 #toast[data-kind="error"] { background: var(--bad); color: #fff; }
-.reader ~ #toast, body:has(.player-bar) #toast { bottom: 110px; }
+.reader ~ #toast, body:has(.player-bar) #toast { bottom: 144px; }
 
 .add-panel { display: grid; gap: 12px; margin-bottom: 24px; }
 .dropzone {
@@ -171,13 +171,39 @@ progress:not([value]) { background: linear-gradient(90deg, var(--surface-2) 30%,
 
 /* ---------------------------------------------------------------- reader */
 .content:has(.reader) { max-width: none; padding: 0; }
-.reader {
-  display: grid; grid-template-rows: auto auto 1fr auto; grid-template-columns: minmax(0, 1fr);
-  height: calc(100dvh - var(--topbar));
-}
-.reader-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
-.qa { padding: 12px 10px 16px; flex: 0 0 var(--qa-h, 300px); overflow: auto; min-height: 0; }
-.qa h2 { font-size: 14px; margin: 0 0 8px; }
+.reader { display: flex; flex-direction: column; height: calc(100dvh - var(--topbar)); }
+.reader [hidden] { display: none !important; }
+/* the header: a bar always, the paper's details under it when open (the details scroll rather than squeeze the content) */
+.reader-header { flex: none; border-bottom: 1px solid var(--border); background: var(--surface); }
+.reader-head { display: flex; align-items: center; gap: 8px; min-height: 48px; box-sizing: border-box; padding: 4px 8px; }
+.reader-head .back { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 9px; color: var(--text); flex: none; }
+.reader-head .back:hover { background: var(--surface-2); }
+.reader-title { flex: 1; min-width: 0; }
+.reader-title h1 { margin: 0; font-size: 16px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status-dot { flex: none; width: 10px; height: 10px; margin: 0 4px; border-radius: 50%; background: var(--busy); }
+.status-dot[data-tone="ok"] { background: var(--ok); }
+.status-dot[data-tone="bad"] { background: var(--bad); }
+.header-toggle { width: 44px; height: 44px; flex: none; }
+.header-toggle svg { transition: transform 0.15s; }
+.reader-header.open .header-toggle svg { transform: rotate(180deg); }
+/* one column on a phone; on a wide reader the sections sit side by side, so the details stay short */
+.reader-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px 24px; align-items: start; max-height: 42vh; overflow: auto; padding: 4px 16px 16px; }
+.reader-meta, .reader-actions { grid-column: 1 / -1; }
+.reader-meta { margin: 0; font-size: 13px; color: var(--muted); }
+.reader-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.reader-actions .btn { min-height: 44px; }
+.reader-actions .btn[aria-pressed="true"] { background: var(--ok-soft); border-color: var(--ok-soft); color: var(--ok); }
+.header-tags h2, .header-section summary { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0 0 8px; }
+.header-section summary { display: list-item; min-height: 40px; line-height: 40px; margin: 0; cursor: pointer; color: var(--text); font-size: 14px; }
+.header-text { margin: 4px 0 0; font-size: 14px; }
+.tag-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.tag-list .quiet { font-size: 14px; color: var(--muted); }
+.tag-chip { display: inline-flex; align-items: center; gap: 2px; padding: 2px 2px 2px 12px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 14px; }
+.tag-remove { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: none; color: inherit; cursor: pointer; }
+.tag-remove:hover { background: var(--surface-2); }
+.tag-form { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag-form input { flex: 1 1 180px; min-height: 40px; padding: 6px 10px; font: inherit; font-size: 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); color: var(--text); }
+.keyword-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .qa-form { display: grid; gap: 6px; }
 .qa-form textarea { width: 100%; resize: vertical; font: inherit; font-size: 14px; padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
 .qa-form button { justify-self: end; }
@@ -188,19 +214,26 @@ progress:not([value]) { background: linear-gradient(90deg, var(--surface-2) 30%,
 .qa-list .cites { display: flex; flex-wrap: wrap; gap: 6px; }
 .cite { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--accent); }
 .cite:disabled { color: var(--muted); }
-.keyword-bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
-.keyword-bar[hidden] { display: none; }
-.reader-head .back { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 9px; color: var(--text); flex: none; }
-.reader-head .back:hover { background: var(--surface-2); }
-.reader-title { flex: 1; min-width: 0; }
-.reader-title h1 { margin: 0; font-size: 17px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.reader-title p { margin: 2px 0 0; color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the content: three columns from WIDE_MIN (1180px, reader.ts) on, otherwise one pane at a time behind the tabs */
+.reader-main { container: stage / inline-size; flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+.reader-main > .reader-tabs { flex: none; padding: 6px 12px; border-bottom: 1px solid var(--border); }
+.reader-main > .reader-tabs button { min-height: 44px; font-size: 15px; }
+.reader-body { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.reader-body > .splitter { display: none; }
+@container stage (max-width: 1179px) {
+  .reader-body:not(.tab-doc) > .doc-pane { display: none; }
+  .reader-body:not(.tab-chapters) > .chapters-pane { display: none; }
+  .reader-body:not(.tab-qa) > .qa-pane { display: none; }
+}
+@container stage (min-width: 1180px) {
+  .reader-main > .reader-tabs { display: none; }
+  .reader-body { grid-template-columns: minmax(0, 1fr) 6px var(--chapters-w, 320px) 6px var(--qa-w, 340px); }
+  .reader-body > .splitter { display: block; }
+}
 /* the reader's Document/Chapters switch (phones only) and the library's view switch share this class */
 .pane-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
 .pane-tabs button { flex: 1; padding: 7px 12px; border: 0; border-radius: 8px; background: none; cursor: pointer; color: var(--muted); }
 .pane-tabs button[aria-selected="true"] { background: var(--surface-2); color: var(--text); font-weight: 600; }
-.reader .pane-tabs { display: none; }
-.reader-body { display: grid; grid-template-columns: minmax(0, 1fr) 6px var(--side-w, 380px); min-height: 0; }
 .splitter { position: relative; touch-action: none; z-index: 2; outline: none; }
 .splitter::after { content: ""; position: absolute; background: var(--border); transition: background .15s; }
 .splitter.v { cursor: col-resize; }
@@ -223,7 +256,8 @@ body.is-dragging, body.is-dragging * { cursor: inherit; user-select: none; }
 .pdf-container .pdfViewer .page { margin: 0 auto 12px; box-shadow: var(--shadow); }
 .pdf-container .sentence-hl { position: absolute; pointer-events: none; border-radius: 3px; background: rgb(255 214 10 / 0.38); mix-blend-mode: multiply; }
 .pane-message { margin: 0; padding: 32px 20px; color: var(--muted); text-align: center; }
-.side-pane { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--border); background: var(--surface); min-width: 0; }
+.chapters-pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--surface); }
+.qa-pane { min-height: 0; min-width: 0; overflow: auto; background: var(--surface); }
 .now-reading { padding: 14px 16px; border-bottom: 1px solid var(--border); min-height: 74px; }
 .now-reading p { margin: 0; font-family: var(--serif); font-size: 16px; line-height: 1.5; }
 .now-reading .label { display: block; font: 600 11px/1.6 var(--font); letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
@@ -244,38 +278,47 @@ body.is-dragging, body.is-dragging * { cursor: inherit; user-select: none; }
 .article-text .s:hover { background: var(--surface-2); }
 .article-text .s.current { background: var(--highlight); }
 
+/* The bar has fixed rows, the same in Listen and Read: the read controls take the seek row and the transport row. */
 .player-bar {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.4fr) auto; align-items: center; gap: 8px 18px;
-  padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--surface);
+  display: grid; grid-template-columns: minmax(0, 1fr) max-content minmax(0, 1.4fr) max-content;
+  grid-template-rows: 56px; grid-template-areas: "info controls seek mode";
+  align-items: center; gap: 0 18px; padding: 8px 16px calc(8px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border); background: var(--surface);
 }
-.bar-info { min-width: 0; }
+.bar-info { grid-area: info; min-width: 0; overflow: hidden; }
 .bar-title { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bar-waiting { font-size: 12.5px; color: var(--busy); }
-.bar-controls { display: flex; align-items: center; gap: 2px; }
-.play { display: grid; place-items: center; width: 46px; height: 46px; margin: 0 4px; border: 0; border-radius: 50%; background: var(--accent); color: var(--accent-text); cursor: pointer; }
+.bar-controls { grid-area: controls; display: flex; align-items: center; gap: 2px; min-width: 0; }
+.bar-controls .icon-btn { width: 44px; min-width: 44px; height: 44px; padding: 0; }
+.play { display: grid; place-items: center; width: 44px; height: 44px; margin: 0 4px; border: 0; border-radius: 50%; background: var(--accent); color: var(--accent-text); cursor: pointer; }
 .play:hover { filter: brightness(1.07); }
-.bar-seek { display: flex; align-items: center; gap: 10px; }
-.bar-seek input { flex: 1; accent-color: var(--accent); }
+.bar-seek, .read-seek, .read-wpm { display: none; align-items: center; gap: 10px; min-width: 0; }
+.bar-seek { display: flex; grid-area: seek; }
+.bar-seek input, .read-seek input, .read-wpm input { flex: 1; min-width: 0; }
+.read-seek { grid-area: seek; }
+.read-wpm { grid-area: controls; }
+.read-wpm input[type="range"] { flex: 0 0 180px; }
 .time { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); min-width: 40px; }
-.bar-extra { display: flex; align-items: center; gap: 6px; }
-.bar-extra select { padding: 6px 8px; }
+.read-seek .time, .read-wpm .time { min-width: 64px; }
+.bar-mode { grid-area: mode; }
+.rate-select { padding: 8px 6px; font-size: 14px; min-height: 44px; }
 .follow { color: var(--muted); }
 .follow.on { color: var(--accent); }
 .follow .label { font-size: 13px; }
+/* sliders: a 24px thumb on a thicker track, and a filled part that shows how far along they are */
+.player-bar input[type="range"] { -webkit-appearance: none; appearance: none; height: 40px; margin: 0; background: transparent; cursor: pointer; accent-color: var(--accent); }
+.player-bar input[type="range"]::-webkit-slider-runnable-track { height: 8px; border-radius: 4px; background: linear-gradient(to right, var(--accent) var(--fill, 0%), var(--border) var(--fill, 0%)); }
+.player-bar input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 24px; height: 24px; margin-top: -8px; border: 0; border-radius: 50%; background: var(--accent); }
+.player-bar input[type="range"]::-moz-range-track { height: 8px; border-radius: 4px; background: linear-gradient(to right, var(--accent) var(--fill, 0%), var(--border) var(--fill, 0%)); }
+.player-bar input[type="range"]::-moz-range-thumb { width: 24px; height: 24px; border: 0; border-radius: 50%; background: var(--accent); }
+.player-bar input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.player-bar.reading .bar-controls, .player-bar.reading .bar-seek { display: none; }
+.player-bar.reading .read-seek, .player-bar.reading .read-wpm { display: flex; }
 
 /* Listen | Read: the reading stage replaces the audio controls in the player bar and the document pane */
-.mode-switch { display: inline-flex; padding: 2px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2); }
-.mode-switch button { border: 0; padding: 5px 12px; border-radius: 999px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+.mode-switch { display: inline-flex; height: 44px; border-radius: 999px; background: var(--surface-2); }
+.mode-switch button { display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 14px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font: inherit; font-size: 14px; cursor: pointer; }
 .mode-switch button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
-.read-bar { display: none; gap: 6px; min-width: 0; }
-.read-bar .bar-seek { margin: 0; grid-area: auto; } /* the rows stack inside .read-bar; the audio seek's area does not apply */
-.read-bar .time { min-width: 64px; }
-.player-bar.reading { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "info extra" "read read"; }
-.player-bar.reading > .bar-controls, .player-bar.reading > .bar-seek { display: none; }
-.player-bar.reading .read-bar { display: grid; grid-area: read; }
-.player-bar.reading .bar-info { grid-area: info; }
-.player-bar.reading .bar-extra { grid-area: extra; }
-.player-bar.reading .bar-extra select, .player-bar.reading .follow { display: none; }
 
 /* speed reading stage */
 .speed-stage { display: flex; flex-direction: column; gap: 12px; height: 100%; box-sizing: border-box; padding: 12px 16px 16px; background: var(--surface-2); }
@@ -313,34 +356,18 @@ body.is-dragging, body.is-dragging * { cursor: inherit; user-select: none; }
 
 /* ---------------------------------------------------------------- small screens */
 @media (max-width: 900px) {
-  /* A flex column, not the desktop grid: hidden children (no keywords, a hidden tab) must not shift the rows. */
-  .reader { display: flex; flex-direction: column; }
-  .reader > * { flex: none; }
-  .reader > .reader-body { flex: 1 1 0; min-height: 0; grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(0, 1fr); }
-  .splitter { display: none; }
-  .reader .pane-tabs { display: flex; padding: 6px 16px; border-bottom: 1px solid var(--border); }
-  .reader .pane-tabs button { padding: 7px; }
-  .reader-body.tab-doc .side-pane { display: none; }
-  .reader-body.tab-chapters .doc-pane { display: none; }
-  .side-pane { border-left: 0; min-height: 0; }
-  /* the question box keeps the Ask button in view; the chapter list takes the rest and scrolls */
-  .now-reading { min-height: 0; padding: 10px 16px; }
-  .now-reading p { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 15px; line-height: 1.4; }
-  .qa { flex: 0 1 auto; max-height: 42%; }
-  .chapter-list { min-height: 0; }
-  .keyword-bar { flex-wrap: nowrap; overflow-x: auto; padding: 6px 16px; scrollbar-width: none; }
-  .keyword-bar::-webkit-scrollbar { display: none; }
-  .keyword-bar .chip { flex: none; white-space: nowrap; }
-  .player-bar { grid-template-columns: 1fr auto; grid-template-areas: "info extra" "seek seek" "controls controls"; gap: 0 10px; padding: 4px 12px calc(4px + env(safe-area-inset-bottom)); }
+  .player-bar {
+    grid-template-columns: minmax(0, 1fr) max-content; grid-template-rows: 46px 32px 46px;
+    grid-template-areas: "info mode" "seek seek" "controls controls";
+    gap: 0 10px; padding: 2px 12px calc(2px + env(safe-area-inset-bottom));
+  }
+  .bar-controls { justify-content: center; gap: 0; }
+  .bar-controls .icon-btn { width: 44px; min-width: 44px; }
+  .read-wpm input[type="range"] { flex: 1; }
+  /* the thumb stays 24px; the hit area of a slider is 40px, drawn over the rows above and below its own */
+  .player-bar input[type="range"] { height: 40px; margin: -4px 0; }
+  .play { margin: 0 2px; }
   .bar-title { font-size: 13px; }
-  .bar-extra select { padding: 3px 6px; font-size: 13px; }
-  .play { width: 42px; height: 42px; margin: 0 2px; }
-  .bar-controls .icon-btn { min-width: 36px; height: 36px; }
-  .bar-seek { margin: 2px 0; }
-  .bar-info { grid-area: info; }
-  .bar-extra { grid-area: extra; }
-  .bar-seek { grid-area: seek; }
-  .bar-controls { grid-area: controls; justify-content: center; }
   .follow .label { display: none; }
 }
 @media (max-width: 600px) {

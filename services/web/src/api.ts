@@ -74,6 +74,8 @@ export interface Doc {
   voice: string | null;
   listened: boolean;
   last_listened_at: string | null;
+  /** The signed-in user's own tags on the paper, sorted. */
+  tags: string[];
   created_at: string;
   job: Job | null;
   chapters_total: number;
@@ -397,6 +399,7 @@ export const api = {
     request<Doc>("POST", `/api/documents/${id}/rerun`, { stage }),
   sentences: (id: string, idx: number) => request<Sentence[]>("GET", `/api/documents/${id}/chapters/${idx}/sentences`),
   text: (id: string) => request<TextChapter[]>("GET", `/api/documents/${id}/text`),
+  setTags: (id: string, tags: string[]) => request<{ tags: string[] }>("PUT", `/api/documents/${id}/tags`, { tags }),
   playback: (id: string) => request<Playback>("GET", `/api/documents/${id}/playback`),
   savePlayback: (id: string, p: Playback, keepalive = false) =>
     request<{ ok: boolean }>("PUT", `/api/documents/${id}/playback`, p, keepalive),

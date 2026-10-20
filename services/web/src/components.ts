@@ -7,7 +7,7 @@ import { listenAbstract } from "./abstract";
 import { act, addPanel, notProcessed, openClassifier } from "./actions";
 import { navigate } from "./main";
 
-/** The colour of a status: unread (accent), in progress (amber), listened (green), waiting, busy, failed, idle. */
+/** The colour of a status: unread (accent), in progress (amber), read (green), waiting, busy, failed, idle. */
 export type Tone = "unread" | "progress" | "done" | "wait" | "busy" | "bad" | "idle";
 
 export interface Status {
@@ -47,7 +47,7 @@ export function statusOf(doc: Doc): Status {
     }
     return { label, tone: "busy", progress };
   }
-  if (doc.listened) return { label: "Listened", tone: "done", progress: null };
+  if (doc.listened) return { label: "Read", tone: "done", progress: null };
   const share = doc.playback?.progress ?? null;
   if (doc.playback && (doc.playback.position_s > 0 || (share ?? 0) > 0)) {
     const pct = share === null ? "" : ` · ${Math.round(share * 100)}%`;
@@ -130,7 +130,7 @@ export function paperRow(doc: Doc, reload: () => void): HTMLElement {
     h(
       "div",
       { class: "menu-items", role: "menu" },
-      h("button", { type: "button", role: "menuitem", onclick: () => act(doc, "listened", reload) }, icon("check"), doc.listened ? "Mark as not listened" : "Mark as listened"),
+      h("button", { type: "button", role: "menuitem", onclick: () => act(doc, "listened", reload) }, icon("check"), doc.listened ? "Mark as unread" : "Mark as read"),
       h("button", { type: "button", role: "menuitem", onclick: () => openClassifier(doc.id, reload) }, "Areas and topics…"),
       doc.status === "ready" && (doc.audio_state === null || doc.audio_state === "failed")
         ? h("button", { type: "button", role: "menuitem", onclick: () => act(doc, "make-audio", reload) }, icon("refresh"), "Make audio")

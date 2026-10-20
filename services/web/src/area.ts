@@ -49,8 +49,8 @@ export function areaView(id: string): View {
       "div",
       { class: "area-stats" },
       h("span", {}, `${area.papers} ${area.papers === 1 ? "paper" : "papers"}`),
-      h("span", { class: "quiet" }, `${area.unread} unread · ${area.listened} listened`),
-      listened !== null ? bar(listened, `${Math.round(listened * 100)}% listened`) : null,
+      h("span", { class: "quiet" }, `${area.unread} unread · ${area.listened} read`),
+      listened !== null ? bar(listened, `${Math.round(listened * 100)}% read`) : null,
       link(`/papers?area=${area.id}`, "Browse all papers in this area", "btn small"),
     );
 

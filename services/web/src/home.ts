@@ -83,7 +83,7 @@ export function homeView(): View {
             `tile${a.papers ? "" : " empty"}`,
             h("span", { class: "tile-head" }, h("strong", {}, a.name), a.unread ? chip(`${a.unread} unread`, "unread") : null),
             h("span", { class: "tile-count quiet" }, a.papers ? `${a.papers} ${a.papers === 1 ? "paper" : "papers"}` : "No papers yet"),
-            a.progress !== null ? bar(a.progress, `${Math.round(a.progress * 100)}% listened`) : null,
+            a.progress !== null ? bar(a.progress, `${Math.round(a.progress * 100)}% read`) : null,
             h("span", { class: "tile-topics" }, ...a.topics.map((t) => chip(t.name, "topic-mini"))),
           ),
         ),

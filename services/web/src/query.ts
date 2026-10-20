@@ -5,13 +5,13 @@ import { type Filters, NO_FILTERS } from "./api";
 export const STATUSES = [
   ["", "All"],
   ["unread", "Unread"],
-  ["listened", "Listened"],
+  ["listened", "Read"],
   ["failed", "Failed"],
 ] as const;
 
 export const SORTS = [
   ["added", "Recently added"],
-  ["listened", "Recently listened"],
+  ["listened", "Recently read"],
   ["title", "Title"],
 ] as const;
 

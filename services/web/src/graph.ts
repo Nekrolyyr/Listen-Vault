@@ -85,7 +85,7 @@ export function graphView(data: Graph, onOpen: (node: GraphNode) => void): HTMLE
     const label = svg("text", { x: 10, y: 4, class: "graph-label" });
     label.textContent = n.title.length > LABEL_CHARS ? `${n.title.slice(0, LABEL_CHARS - 1)}…` : n.title;
     const title = svg("title");
-    title.textContent = [n.title, n.year, n.listened ? "listened" : null].filter(Boolean).join(" · ");
+    title.textContent = [n.title, n.year, n.listened ? "read" : null].filter(Boolean).join(" · ");
     g.append(dot, label, title);
     g.addEventListener("click", () => onOpen(n));
     g.addEventListener("keydown", (e) => {

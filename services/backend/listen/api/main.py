@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 from pypdf import PdfReader
 
-from .. import accounts, appsettings, areas, config, db, documents, embeddings, jobs, library, narrations
+from .. import accounts, appsettings, areas, config, db, documents, embeddings, jobs, library, narrations, tagging
 from ..storage import DocPaths
 from .admin import register_admin_routes
 from .deps import admin_only, pool, uid, user_of
@@ -58,6 +58,8 @@ SELECT d.*, le.listened, le.last_listened_at,
             ORDER BY k.weight DESC, k.term LIMIT 4) t) AS top_terms,
        (SELECT coalesce(json_agg(json_build_object('id', t.id, 'name', t.name) ORDER BY t.name), '[]'::json)
           FROM document_topics dt JOIN topics t ON t.id = dt.topic_id WHERE dt.document_id = d.id) AS doc_topics,
+       (SELECT coalesce(array_agg(lt.tag ORDER BY lt.tag), '{}') FROM library_tags lt
+          WHERE lt.document_id = d.id AND lt.user_id = %(uid)s) AS doc_tags,
        ar.primary_area AS area_primary, ar.also_areas AS area_also, ar.confidence AS area_confidence,
        ar.source AS area_source, ar.pinned AS area_pinned
 FROM documents d
@@ -136,6 +138,10 @@ class DocPatch(BaseModel):
     listened: bool | None = None
 
 
+class TagsIn(BaseModel):
+    tags: list[str] = Field(max_length=50)
+
+
 class PlaybackIn(BaseModel):
     chapter_idx: int = Field(ge=0)
     position_s: float = Field(ge=0)
@@ -180,7 +186,7 @@ def _doc_out(r: dict[str, Any]) -> dict[str, Any]:
         "status": r["status"], "error": r["error"], "duration_s": r.get("duration_s"), "voice": r.get("voice"),
         "audio_state": r.get("audio_state"),
         "pages": r["pages"], "listened": r["listened"], "last_listened_at": r["last_listened_at"],
-        "created_at": r["created_at"], "abstract": r.get("abstract"),
+        "created_at": r["created_at"], "abstract": r.get("abstract"), "tags": list(r.get("doc_tags") or []),
     }
     if "top_terms" in r:
         out["top_terms"] = list(r["top_terms"] or [])
@@ -872,6 +878,23 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
                                (doc_id, uid(request))).fetchone()
         return {"chapter_idx": 0, "position_s": 0, "rate": 1.0} if row is None else {
             "chapter_idx": row["chapter_idx"], "position_s": row["position_s"], "rate": row["rate"]}
+
+    @app.put("/api/documents/{doc_id}/tags")
+    def put_tags(request: Request, doc_id: UUID, body: TagsIn):
+        """The signed-in user's own tags on a paper. The list sent replaces the one kept; the stored list is returned."""
+        user_id = uid(request)
+        try:
+            tags = tagging.clean(body.tags)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        with pool(request).connection() as conn, conn.transaction():
+            if not documents.in_library(conn, user_id, doc_id):
+                raise HTTPException(404, "Document not found")
+            conn.execute("DELETE FROM library_tags WHERE user_id = %s AND document_id = %s", (user_id, doc_id))
+            for tag in tags:
+                conn.execute("INSERT INTO library_tags (user_id, document_id, tag) VALUES (%s, %s, %s)",
+                             (user_id, doc_id, tag))
+        return {"tags": tags}
 
     @app.put("/api/documents/{doc_id}/playback")
     def put_playback(request: Request, doc_id: UUID, body: PlaybackIn):
