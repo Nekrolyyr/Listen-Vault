@@ -36,6 +36,10 @@ class QaLlm:
         return self.answer
 
 
+def _owner(conn) -> int:
+    return conn.execute("INSERT INTO users (email) VALUES ('qa@example.org') RETURNING id").fetchone()["id"]
+
+
 def _paper():
     return Document(
         abstract=[Paragraph("We study how attention heads specialise during pre-training.", page=1)],
@@ -88,7 +92,7 @@ def test_question_is_answered_by_a_qa_job_and_the_document_stays_ready(settings,
                               "RETURNING id").fetchone()["id"]
         q = conn.execute("INSERT INTO questions (document_id, question) VALUES (%s, 'How are heads pruned?') "
                          "RETURNING id", (doc_id,)).fetchone()["id"]
-        jobs.enqueue_question(conn, doc_id, q)
+        jobs.enqueue_question(conn, doc_id, q, _owner(conn))
     paths = DocPaths(settings.docs_dir, doc_id).ensure()
     _paper().save(paths.structure)
 
@@ -111,7 +115,7 @@ def test_question_without_model_is_marked_failed(settings, pool):
                               "RETURNING id").fetchone()["id"]
         q = conn.execute("INSERT INTO questions (document_id, question) VALUES (%s, 'How?') RETURNING id",
                          (doc_id,)).fetchone()["id"]
-        jobs.enqueue_question(conn, doc_id, q)
+        jobs.enqueue_question(conn, doc_id, q, _owner(conn))
     DocPaths(settings.docs_dir, doc_id).ensure()
     _paper().save(DocPaths(settings.docs_dir, doc_id).structure)
 

@@ -71,8 +71,10 @@ class Worker:
 
     def _library_job(self, job) -> None:
         if job["kind"] == "zotero_sync":
+            if job["user_id"] is None:  # queued by an administrator; without one there is no library to fill
+                raise PipelineError("The Zotero sync was queued without an administrator")
             try:
-                zotero.sync(self.pool, self.settings)
+                zotero.sync(self.pool, self.settings, job["user_id"])
             except zotero.ZoteroError as e:  # recorded in zotero_state.last_error; the next sync tries again
                 log.warning("zotero sync failed: %s", e)
             return

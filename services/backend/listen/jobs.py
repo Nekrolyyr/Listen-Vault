@@ -14,6 +14,7 @@ from uuid import UUID
 from psycopg import Connection
 
 STALE_AFTER = timedelta(minutes=10)
+MAX_OPEN_PER_USER = 5  # queued or running jobs one user may have at once (the page quota is a separate limit)
 MAX_ATTEMPTS = 3
 RETRY_DELAYS_S = (30, 300)  # after attempt 1 and 2
 
@@ -21,10 +22,11 @@ RETRY_DELAYS_S = (30, 300)  # after attempt 1 and 2
 STAGES = ("fetch", "ocr", "structure", "enrich", "chapters", "synthesis")
 
 
-def enqueue(conn: Connection, document_id: UUID | str, options: dict[str, Any] | None = None) -> int:
+def enqueue(conn: Connection, document_id: UUID | str, options: dict[str, Any] | None = None,
+            user_id: int | None = None) -> int:
     row = conn.execute(
-        "INSERT INTO jobs (document_id, options) VALUES (%s, %s) RETURNING id",
-        (document_id, json.dumps(options or {})),
+        "INSERT INTO jobs (document_id, options, user_id) VALUES (%s, %s, %s) RETURNING id",
+        (document_id, json.dumps(options or {}), user_id),
     ).fetchone()
     conn.execute(
         "UPDATE documents SET status = 'queued', error = NULL, updated_at = now() WHERE id = %s",
@@ -33,23 +35,29 @@ def enqueue(conn: Connection, document_id: UUID | str, options: dict[str, Any] |
     return row["id"]
 
 
-def enqueue_library(conn: Connection, kind: str, options: dict[str, Any] | None = None) -> int | None:
+def enqueue_library(conn: Connection, kind: str, options: dict[str, Any] | None = None,
+                    user_id: int | None = None) -> int | None:
     """Queue a job that is not about one document (e.g. a Zotero sync). Returns None if one is already open."""
     row = conn.execute(
-        "INSERT INTO jobs (kind, options) SELECT %s, %s WHERE NOT EXISTS "
+        "INSERT INTO jobs (kind, options, user_id) SELECT %s, %s, %s WHERE NOT EXISTS "
         "(SELECT 1 FROM jobs WHERE kind = %s AND state IN ('queued', 'running')) RETURNING id",
-        (kind, json.dumps(options or {}), kind),
+        (kind, json.dumps(options or {}), user_id, kind),
     ).fetchone()
     return row["id"] if row else None
 
 
-def enqueue_question(conn: Connection, document_id: UUID | str, question_id: int) -> int:
+def enqueue_question(conn: Connection, document_id: UUID | str, question_id: int, user_id: int) -> int:
     """Queue a 'qa' job. It does not change the document's processing status."""
     row = conn.execute(
-        "INSERT INTO jobs (document_id, kind, options) VALUES (%s, 'qa', %s) RETURNING id",
-        (document_id, json.dumps({"question_id": question_id})),
+        "INSERT INTO jobs (document_id, kind, options, user_id) VALUES (%s, 'qa', %s, %s) RETURNING id",
+        (document_id, json.dumps({"question_id": question_id}), user_id),
     ).fetchone()
     return row["id"]
+
+
+def open_for_user(conn: Connection, user_id: int) -> int:
+    return conn.execute("SELECT count(*) AS n FROM jobs WHERE user_id = %s AND state IN ('queued', 'running')",
+                        (user_id,)).fetchone()["n"]
 
 
 def has_open_job(conn: Connection, document_id: UUID | str) -> bool:
@@ -69,10 +77,12 @@ def claim(conn: Connection, worker: str) -> dict[str, Any] | None:
             UPDATE jobs SET state = 'running', worker = %(w)s, attempts = attempts + 1,
                             started_at = COALESCE(started_at, now()), heartbeat_at = now(), error = NULL
             WHERE id = (
-                SELECT id FROM jobs
-                WHERE run_after <= now()
-                  AND (state = 'queued' OR (state = 'running' AND heartbeat_at < now() - %(stale)s))
-                ORDER BY run_after, id
+                SELECT j.id FROM jobs j
+                WHERE j.run_after <= now()
+                  AND (j.state = 'queued' OR (j.state = 'running' AND j.heartbeat_at < now() - %(stale)s))
+                -- fair share: the user with the fewest running jobs goes first, then the oldest job
+                ORDER BY (SELECT count(*) FROM jobs r WHERE r.state = 'running'
+                          AND r.user_id IS NOT DISTINCT FROM j.user_id), j.run_after, j.id
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
             )

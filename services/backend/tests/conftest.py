@@ -13,6 +13,7 @@ import pytest
 from listen import config, db
 
 FIXTURES = Path(__file__).parent / "fixtures"
+TERMS_DIR = Path(__file__).parents[3] / "config/terms"
 
 
 @pytest.fixture(scope="session")
@@ -33,7 +34,7 @@ def database_url():
 def clean_db(database_url):
     with psycopg.connect(database_url, autocommit=True) as conn:
         conn.execute("TRUNCATE documents, chapters, sentences, jobs, playback, settings, zotero_links, "
-                     "document_keywords RESTART IDENTITY CASCADE")
+                     "document_keywords, users, admin_audit, auth_attempts, terms_versions RESTART IDENTITY CASCADE")
         conn.execute("UPDATE zotero_state SET last_version = 0, last_synced_at = NULL, last_error = NULL")
     return database_url
 
@@ -51,8 +52,9 @@ def settings(clean_db, tmp_path) -> config.Settings:
     return config.Settings(
         database_url=clean_db,
         data_dir=tmp_path / "data",
-        listen_user="doctor",
         proxy_secret="test-proxy-secret",
+        public_url="http://localhost:8080",
+        terms_dir=TERMS_DIR,
         max_upload_mb=2,
         static_dir=None,
         models_dir=tmp_path / "models",
@@ -60,6 +62,23 @@ def settings(clean_db, tmp_path) -> config.Settings:
         grobid_url="http://grobid.invalid:8070",
         lexicon_path=Path(__file__).parents[3] / "config/normalizer/lexicon.yaml",
     )
+
+
+def make_user(database_url: str, email: str = "doctor@example.org", admin: bool = False,
+              password: str = "correct horse battery", verified: bool = True) -> tuple[int, str]:
+    """A signed-in account: returns its id and a session token (the cookie value)."""
+    from listen import accounts
+    with psycopg.connect(database_url, autocommit=False) as conn:
+        from psycopg.rows import dict_row
+        conn.row_factory = dict_row
+        user = accounts.create_user(conn, email, password, verified=verified)
+        conn.execute("UPDATE users SET is_admin = %s WHERE id = %s", (admin, user["id"]))
+        current = accounts.load_terms(conn, TERMS_DIR)
+        if current:
+            accounts.accept_terms(conn, user["id"], current)
+        token = accounts.new_session(conn, user["id"])
+        conn.commit()
+    return user["id"], token
 
 
 def make_pdf(path: Path, pages: list[list[tuple[int, str]]]) -> Path:

@@ -29,6 +29,14 @@ PDF_ATTACHMENT = {
 NOTE = {"key": "NNN", "version": 40, "data": {"key": "NNN", "itemType": "note", "parentItem": "AAA"}}
 
 
+
+def owner(pool) -> int:
+    """The administrator whose library the synced items go into."""
+    with pool.connection() as conn:
+        row = conn.execute("INSERT INTO users (email, is_admin, email_verified_at) VALUES ('admin@example.org', true, now()) "
+                           "ON CONFLICT (email) DO UPDATE SET is_admin = true RETURNING id").fetchone()
+    return row["id"]
+
 def _client(library: list[dict], version: int = 42, storage_handler=None):
     def handler(request: httpx.Request):
         assert request.headers["Zotero-API-Key"] == "secret"
@@ -51,7 +59,7 @@ def _settings(settings):
 
 def test_sync_catalogues_items_and_queues_tagged_papers(settings, pool):
     s = _settings(settings)
-    counts = zotero.sync(pool, s, _client([PAPER, UNQUEUED, PDF_ATTACHMENT, NOTE]))
+    counts = zotero.sync(pool, s, owner(pool), _client([PAPER, UNQUEUED, PDF_ATTACHMENT, NOTE]))
     assert counts == {"items": 2, "catalogued": 2}
     with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
         paper = conn.execute("SELECT * FROM documents WHERE title = 'Sparse heads'").fetchone()
@@ -71,9 +79,9 @@ def test_sync_catalogues_items_and_queues_tagged_papers(settings, pool):
 
 def test_second_sync_is_incremental_and_does_not_requeue(settings, pool):
     s = _settings(settings)
-    zotero.sync(pool, s, _client([PAPER, UNQUEUED, PDF_ATTACHMENT]))
+    zotero.sync(pool, s, owner(pool), _client([PAPER, UNQUEUED, PDF_ATTACHMENT]))
     # nothing changed since version 42
-    assert zotero.sync(pool, s, _client([PAPER, UNQUEUED, PDF_ATTACHMENT], version=42)) == {
+    assert zotero.sync(pool, s, owner(pool), _client([PAPER, UNQUEUED, PDF_ATTACHMENT], version=42)) == {
         "items": 0, "catalogued": 0}
     with psycopg.connect(settings.database_url) as conn:
         assert conn.execute("SELECT count(*) FROM jobs").fetchone()[0] == 0
@@ -83,7 +91,7 @@ def test_sync_pages_through_large_libraries(settings, pool):
     many = [{"key": f"K{n:03d}", "version": 5,
              "data": {"key": f"K{n:03d}", "itemType": "book", "title": f"Book {n}", "tags": [], "creators": []}}
             for n in range(zotero.PAGE + 3)]
-    counts = zotero.sync(pool, _settings(settings), _client(many, version=7))
+    counts = zotero.sync(pool, _settings(settings), owner(pool), _client(many, version=7))
     assert counts["items"] == zotero.PAGE + 3
 
 
@@ -120,7 +128,7 @@ def test_sync_error_is_recorded_and_raised(settings, pool):
                         headers={"Zotero-API-Key": "bad"})
     client = zotero.ZoteroClient("1", "bad", http=http)
     with pytest.raises(zotero.ZoteroError, match="refused the API key"):
-        zotero.sync(pool, _settings(settings), client)
+        zotero.sync(pool, _settings(settings), owner(pool), client)
     with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
         assert "refused" in conn.execute("SELECT last_error FROM zotero_state").fetchone()["last_error"]
 
@@ -136,7 +144,7 @@ def test_enqueue_library_job_is_not_duplicated(pool):
 def test_fetch_uses_the_zotero_pdf(settings, pool, monkeypatch):
     """A queued Zotero paper downloads its PDF from Zotero instead of the (absent) upload."""
     s = _settings(settings)
-    zotero.sync(pool, s, _client([PAPER, PDF_ATTACHMENT]))
+    zotero.sync(pool, s, owner(pool), _client([PAPER, PDF_ATTACHMENT]))
     pdf_client = zotero.ZoteroClient("1", "secret", http=httpx.Client(
         base_url=zotero.API_URL, transport=httpx.MockTransport(lambda r: httpx.Response(200, content=PDF))))
     monkeypatch.setattr(zotero, "ZoteroClient", lambda *a, **k: pdf_client)
@@ -168,7 +176,7 @@ def test_user_id_is_looked_up_from_the_api_key(settings, pool):
     http = httpx.Client(base_url=zotero.API_URL, transport=httpx.MockTransport(handler),
                         headers={"Zotero-API-Key": "secret", "Zotero-API-Version": "3"})
     client = zotero.ZoteroClient(None, "secret", http=http)
-    counts = zotero.sync(pool, _settings(settings), client)
+    counts = zotero.sync(pool, _settings(settings), owner(pool), client)
     assert counts["items"] == 1
     assert seen == ["/keys/current", "/users/19247461/items"]  # looked up once, then used
 
@@ -189,7 +197,7 @@ def test_username_in_the_environment_is_replaced_by_the_key_lookup(settings, poo
                         headers={"Zotero-API-Key": "secret", "Zotero-API-Version": "3"})
     client = zotero.ZoteroClient("Erudyyr", "secret", http=http)
     with caplog.at_level("INFO", logger="listen.zotero"):
-        counts = zotero.sync(pool, _settings(settings), client)
+        counts = zotero.sync(pool, _settings(settings), owner(pool), client)
     assert counts["items"] == 1
     assert seen == ["/keys/current", "/users/19247461/items"]
     assert "not a numeric user ID" in caplog.text
@@ -203,7 +211,7 @@ def test_refusal_keeps_zotero_text_in_the_error_and_the_log(settings, pool, capl
                         headers={"Zotero-API-Key": "secret"})
     client = zotero.ZoteroClient("1", "secret", http=http)
     with caplog.at_level("WARNING", logger="listen.zotero"), pytest.raises(zotero.ZoteroError) as info:
-        zotero.sync(pool, _settings(settings), client)
+        zotero.sync(pool, _settings(settings), owner(pool), client)
     assert str(info.value) == "Zotero returned HTTP 400: Invalid user ID"
     assert "GET /users/1/items: HTTP 400: Invalid user ID" in caplog.text
     with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
@@ -216,16 +224,16 @@ def test_the_api_key_never_reaches_the_log(settings, pool, caplog):
                         headers={"Zotero-API-Key": "secret"})
     client = zotero.ZoteroClient("1", "secret", http=http)
     with caplog.at_level("DEBUG", logger="listen.zotero"), pytest.raises(zotero.ZoteroError):
-        zotero.sync(pool, _settings(settings), client)
+        zotero.sync(pool, _settings(settings), owner(pool), client)
     assert "secret" not in caplog.text
 
 
 def test_later_change_to_the_paper_keeps_its_pdf_attachment(settings, pool):
     s = _settings(settings)
-    zotero.sync(pool, s, _client([PAPER, PDF_ATTACHMENT]))
+    zotero.sync(pool, s, owner(pool), _client([PAPER, PDF_ATTACHMENT]))
     # a tag is added later: the paper changes, its PDF attachment does not come back in this sync
     retagged = {**PAPER, "version": 50, "data": {**PAPER["data"], "tags": [{"tag": "listen-queue"}, {"tag": "x"}]}}
-    zotero.sync(pool, s, _client([retagged], version=50))
+    zotero.sync(pool, s, owner(pool), _client([retagged], version=50))
     with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
         link = conn.execute("SELECT pdf_attachment FROM zotero_links WHERE zotero_key = 'AAA'").fetchone()
     assert link["pdf_attachment"] == "PPP"

@@ -1,9 +1,9 @@
 """Request authentication for the api.
 
-The login proxy (Caddy, see docker-compose.yml) checks the login first and only forwards authenticated
-requests, adding the Remote-User header (the logged-in user) and X-Listen-Proxy (a shared secret).
-Other containers on the same Docker network could reach the api directly, so both headers are required.
-State-changing requests must also carry X-Requested-With, which a cross-site form cannot set.
+Caddy forwards every request with the shared X-Listen-Proxy secret, so other containers on the same Docker
+network cannot reach the api directly. Under /api, a request is served only with a live session cookie
+(see listen.accounts), except for the few public paths below. State-changing requests must also carry
+X-Requested-With, which a cross-site form cannot set.
 """
 from __future__ import annotations
 
@@ -13,28 +13,45 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-OPEN_PATHS = {"/api/health"}
+from .. import accounts
+
+SESSION_COOKIE = "listen_session"
+PUBLIC_API = {
+    "/api/health",          # Docker healthcheck (no secret, see docker-compose.yml)
+    "/api/auth/register",
+    "/api/auth/login",
+    "/api/auth/verify",
+    "/api/terms",
+}
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 CSRF_HEADER = "x-requested-with"
 CSRF_VALUE = "listen-vault"
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, user: str, proxy_secret: str):
+    def __init__(self, app, proxy_secret: str):
         super().__init__(app)
-        if not user or not proxy_secret:
-            raise RuntimeError("LISTEN_USER and LISTEN_PROXY_SECRET must be set")
-        self.user = user.encode()
+        if not proxy_secret:
+            raise RuntimeError("LISTEN_PROXY_SECRET must be set")
         self.secret = proxy_secret.encode()
 
     async def dispatch(self, request: Request, call_next):
-        if request.url.path in OPEN_PATHS:
+        path = request.url.path
+        if path == "/api/health":
             return await call_next(request)
         secret = request.headers.get("x-listen-proxy", "").encode()
-        user = request.headers.get("remote-user", "").encode()
-        if not (hmac.compare_digest(secret, self.secret) and hmac.compare_digest(user, self.user)):
+        if not hmac.compare_digest(secret, self.secret):
             return JSONResponse({"detail": "Not authenticated"}, status_code=401)
-        if request.method not in SAFE_METHODS and request.headers.get(CSRF_HEADER) != CSRF_VALUE:
+        if path.startswith("/api/") and request.method not in SAFE_METHODS \
+                and request.headers.get(CSRF_HEADER) != CSRF_VALUE:
             return JSONResponse({"detail": "Missing X-Requested-With header"}, status_code=403)
-        request.state.user = user.decode()
+        if not path.startswith("/api/") or path in PUBLIC_API:
+            request.state.user = None
+            return await call_next(request)
+        token = request.cookies.get(SESSION_COOKIE, "")
+        with request.app.state.pool.connection() as conn:
+            user = accounts.session_user(conn, token)
+        if user is None:
+            return JSONResponse({"detail": "Not signed in"}, status_code=401)
+        request.state.user = user
         return await call_next(request)

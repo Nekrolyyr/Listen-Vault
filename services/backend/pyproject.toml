@@ -8,6 +8,7 @@ dependencies = [
   "uvicorn[standard]>=0.30",
   "python-multipart>=0.0.9",
   "psycopg[binary,pool]>=3.2",
+  "pypdf>=5.0",           # page counts at upload (the page quota)
 ]
 
 [project.optional-dependencies]

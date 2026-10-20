@@ -15,6 +15,7 @@ import httpx
 from psycopg import Connection
 from psycopg_pool import ConnectionPool
 
+from . import documents
 from .config import Settings
 
 log = logging.getLogger("listen.zotero")
@@ -122,8 +123,9 @@ def _name(creator: dict[str, Any]) -> str:
 
 
 def _catalogue(conn: Connection, key: str, version: int, data: dict[str, Any], pdf_key: str | None,
-               tags: list[str], collections: list[str]) -> str:
-    """Create or refresh the document of a Zotero item. Nothing is queued: processing is always started by hand.
+               tags: list[str], collections: list[str], owner_id: int) -> str:
+    """Create or refresh the document of a Zotero item, and put it in the owner's library (the Zotero library is
+    one account's). Nothing is queued: processing is always started by hand.
     Returns "catalogued" (new or still not processed) or "kept" (already processed)."""
     title = (data.get("title") or "").strip() or "Untitled"
     authors = [n for c in data.get("creators", []) if c.get("creatorType") == "author" and (n := _name(c))]
@@ -164,11 +166,13 @@ def _catalogue(conn: Connection, key: str, version: int, data: dict[str, Any], p
             "tags = %s, collections = %s, synced_at = now() WHERE document_id = %s",
             (version, pdf_key, tags, collections, doc_id),
         )
+    documents.add_entry(conn, owner_id, doc_id)
     return "catalogued" if status == "catalogued" else "kept"
 
 
-def sync(pool: ConnectionPool, settings: Settings, client: ZoteroClient | None = None) -> dict[str, int]:
-    """Bring the catalogue up to date with the Zotero library. Returns counts for the log."""
+def sync(pool: ConnectionPool, settings: Settings, owner_id: int,
+         client: ZoteroClient | None = None) -> dict[str, int]:
+    """Bring the catalogue up to date with the Zotero library, into the library of owner_id. Returns counts for the log."""
     client = client or ZoteroClient(settings.zotero_user_id, settings.zotero_api_key)
     with pool.connection() as conn:
         last = conn.execute("SELECT last_version FROM zotero_state WHERE id = 1").fetchone()["last_version"]
@@ -196,7 +200,8 @@ def sync(pool: ConnectionPool, settings: Settings, client: ZoteroClient | None =
                 d = papers[i["key"]]
                 tags = [t["tag"] for t in d.get("tags", []) if t.get("tag")]
                 collections = list(d.get("collections", []))
-                if _catalogue(conn, i["key"], i["version"], d, pdfs.get(i["key"]), tags, collections) == "catalogued":
+                if _catalogue(conn, i["key"], i["version"], d, pdfs.get(i["key"]), tags, collections,
+                               owner_id) == "catalogued":
                     counts["catalogued"] += 1
         # a PDF attached to an item that did not change itself
         for parent, att in pdfs.items():

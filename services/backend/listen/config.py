@@ -11,10 +11,17 @@ class Settings:
     database_url: str
     data_dir: Path
     # api
-    listen_user: str = ""
     proxy_secret: str = ""
     max_upload_mb: int = 100
     static_dir: Path | None = None
+    public_url: str = "http://localhost:8080"   # links in emails
+    terms_dir: Path = Path("/app/config/terms")
+    # Mail (verification emails). Without SMTP_HOST, accounts are verified at once and a warning is logged.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
     # worker
     models_dir: Path = Path("/models")
     llm_url: str = "http://llm:8080"
@@ -51,6 +58,10 @@ class Settings:
         return self.models_dir / "embed" / "kbir-inspec"
 
     @property
+    def smtp_configured(self) -> bool:
+        return bool(self.smtp_host and self.smtp_from)
+
+    @property
     def zotero_configured(self) -> bool:
         return bool(self.zotero_api_key)
 
@@ -61,10 +72,16 @@ def load() -> Settings:
     return Settings(
         database_url=env["DATABASE_URL"],
         data_dir=Path(env.get("DATA_DIR", "/data")),
-        listen_user=env.get("LISTEN_USER", ""),
         proxy_secret=env.get("LISTEN_PROXY_SECRET", ""),
         max_upload_mb=int(env.get("MAX_UPLOAD_MB", "100")),
         static_dir=Path(static) if Path(static).is_dir() else None,
+        public_url=env.get("PUBLIC_URL", "http://localhost:8080").rstrip("/"),
+        terms_dir=Path(env.get("TERMS_DIR", "/app/config/terms")),
+        smtp_host=env.get("SMTP_HOST", "").strip(),
+        smtp_port=int(env.get("SMTP_PORT", "587")),
+        smtp_user=env.get("SMTP_USER", "").strip(),
+        smtp_password=env.get("SMTP_PASSWORD", ""),
+        smtp_from=env.get("SMTP_FROM", "").strip(),
         models_dir=Path(env.get("MODELS_DIR", "/models")),
         llm_url=env.get("LLM_URL", "http://llm:8080"),
         grobid_url=env.get("GROBID_URL", "http://grobid:8070"),

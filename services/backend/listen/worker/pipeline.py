@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from psycopg_pool import ConnectionPool
+from pypdf import PdfReader
 
 from .. import appsettings, embeddings, jobs
 from ..config import Settings
@@ -207,16 +208,27 @@ class Pipeline:
 
         filename_title = Path(row["original_filename"] or "").stem
         linked = "EXISTS (SELECT 1 FROM zotero_links z WHERE z.document_id = documents.id)"
+        # A web article has no pages: about 500 words make one page, for the page quota.
+        words = sum(len(p.text.split()) for p in doc.abstract) + sum(
+            len(p.text.split()) for s in doc.sections for p in s.paragraphs)
+        pdf_pages = None  # PDFs added without a page count (Zotero attachments) are counted here
+        if row["source_type"] == "pdf" and not row["pages"]:
+            try:
+                pdf_pages = len(PdfReader(str(paths.viewer_pdf if paths.viewer_pdf.exists() else paths.source_pdf)).pages)
+            except Exception:  # noqa: BLE001 - an unreadable page count only leaves the quota at zero for this paper
+                log.warning("could not count the pages of document %s", job["document_id"])
         with self.pool.connection() as conn:  # for Zotero items the library's metadata is authoritative
             conn.execute(
                 f"""UPDATE documents SET
                      title = CASE WHEN title = '' OR title = %(fn)s OR title = source_url THEN %(title)s ELSE title END,
                      authors = CASE WHEN {linked} THEN authors ELSE %(authors)s END,
                      published = CASE WHEN {linked} THEN published ELSE %(published)s END,
+                     pages = CASE WHEN source_type = 'url' THEN %(pages)s ELSE coalesce(pages, %(pdf_pages)s) END,
                      updated_at = now()
                    WHERE id = %(id)s""",
                 {"fn": filename_title, "title": doc.title or row["title"], "authors": doc.authors[:20],
-                 "published": doc.published, "id": job["document_id"]},
+                 "published": doc.published, "pages": max(1, -(-words // 500)), "pdf_pages": pdf_pages,
+                 "id": job["document_id"]},
             )
         return doc
 

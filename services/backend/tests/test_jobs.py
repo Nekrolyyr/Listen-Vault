@@ -73,3 +73,17 @@ def test_heartbeat_reports_deleted_document(clean_db):
         job = jobs.claim(conn, "w")
         conn.execute("DELETE FROM documents WHERE id = %s", (doc,))
         assert not jobs.heartbeat(conn, job["id"], "synthesis")
+
+
+def test_claim_gives_the_user_with_fewest_running_jobs_the_next_turn(clean_db):
+    with _conn(clean_db) as conn:
+        ann = conn.execute("INSERT INTO users (email) VALUES ('ann@example.org') RETURNING id").fetchone()["id"]
+        bea = conn.execute("INSERT INTO users (email) VALUES ('bea@example.org') RETURNING id").fetchone()["id"]
+        for _ in range(3):  # Ann queues three papers first
+            jobs.enqueue(conn, _doc(conn), user_id=ann)
+        jobs.enqueue(conn, _doc(conn), user_id=bea)  # Bea's paper is the newest
+        first = jobs.claim(conn, "w1")
+        second = jobs.claim(conn, "w2")
+        assert first["user_id"] == ann
+        assert second["user_id"] == bea  # Ann already has a job running, so Bea goes next
+        assert jobs.open_for_user(conn, ann) == 3

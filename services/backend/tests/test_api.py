@@ -5,10 +5,20 @@ import pytest
 from fastapi.testclient import TestClient
 
 from listen.api.main import create_app
+from listen.api.security import SESSION_COOKIE
 from listen.storage import DocPaths
 
-AUTH = {"Remote-User": "doctor", "X-Listen-Proxy": "test-proxy-secret", "X-Requested-With": "listen-vault"}
-PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
+from .conftest import make_user
+
+AUTH = {"X-Listen-Proxy": "test-proxy-secret", "X-Requested-With": "listen-vault"}
+
+
+@pytest.fixture(scope="session")
+def PDF(tmp_path_factory) -> bytes:
+    """A real two-page PDF (the upload counts its pages)."""
+    from .conftest import make_pdf
+    path = make_pdf(tmp_path_factory.mktemp("pdf") / "two.pdf", [[(14, "Head pruning")], [(12, "Methods")]])
+    return path.read_bytes()
 
 
 @pytest.fixture
@@ -20,17 +30,24 @@ def client(settings, tmp_path):
     (tmp_path / "secret.txt").write_text("do not serve")
     app = create_app(dataclasses.replace(settings, static_dir=static))
     with TestClient(app) as c:
+        user_id, token = make_user(settings.database_url, admin=True)
+        c.cookies.set(SESSION_COOKIE, token)
+        c.user_id = user_id
         yield c
 
 
-def test_auth_required(client):
-    assert client.get("/api/health").status_code == 200
-    assert client.get("/api/documents").status_code == 401
-    assert client.get("/api/documents", headers={"Remote-User": "doctor"}).status_code == 401
-    assert client.get("/api/documents", headers={**AUTH, "Remote-User": "mallory"}).status_code == 401
-    assert client.get("/api/documents", headers={**AUTH, "X-Listen-Proxy": "guess"}).status_code == 401
-    assert client.get("/", headers={"Remote-User": "doctor"}).status_code == 401  # SPA is protected too
-    assert client.get("/api/me", headers=AUTH).json()["user"] == "doctor"
+def test_auth_required(client, settings):
+    assert client.get("/api/health", headers=AUTH).status_code == 200
+    assert client.get("/api/documents", headers=AUTH).status_code == 200  # signed in by the fixture
+    anonymous = TestClient(client.app)
+    assert anonymous.get("/api/documents", headers=AUTH).status_code == 401  # no session cookie
+    assert anonymous.get("/api/documents").status_code == 401  # and no proxy secret
+    assert anonymous.get("/api/documents", headers={**AUTH, "X-Listen-Proxy": "guess"}).status_code == 401
+    anonymous.cookies.set(SESSION_COOKIE, "forged")
+    assert anonymous.get("/api/documents", headers=AUTH).status_code == 401
+    assert anonymous.get("/api/terms", headers=AUTH).status_code == 200  # public
+    assert anonymous.get("/", headers=AUTH).status_code == 200  # the app itself is public; its data is not
+    assert client.get("/api/me", headers=AUTH).json()["email"] == "doctor@example.org"
 
 
 def test_state_changes_need_csrf_header(client):
@@ -39,7 +56,7 @@ def test_state_changes_need_csrf_header(client):
     assert r.status_code == 403
 
 
-def test_upload_pdf_creates_job(client, settings):
+def test_upload_pdf_creates_job(client, settings, PDF):
     r = client.post("/api/documents", files={"file": ("My_Great_Paper.pdf", PDF, "application/pdf")}, headers=AUTH)
     assert r.status_code == 201, r.text
     doc = r.json()
@@ -49,7 +66,7 @@ def test_upload_pdf_creates_job(client, settings):
     assert [d["id"] for d in listed] == [doc["id"]]
 
 
-def test_upload_rejects_non_pdf_and_large_files(client, settings):
+def test_upload_rejects_non_pdf_and_large_files(client, settings, PDF):
     r = client.post("/api/documents", files={"file": ("x.pdf", b"<html>", "application/pdf")}, headers=AUTH)
     assert r.status_code == 415
     big = PDF + b"0" * (3 * 1024 * 1024)
@@ -113,6 +130,9 @@ def test_zotero_status_and_queue_of_catalogued_items(client, settings):
                                  "VALUES ('url', 'https://doi.org/10.1/x', 'A', 'catalogued') RETURNING id").fetchone()[0]
         no_link = conn.execute("INSERT INTO documents (source_type, title, status) "
                                "VALUES ('url', 'B', 'catalogued') RETURNING id").fetchone()[0]
+        # the Zotero sync puts its items in the library of the administrator who runs it
+        conn.execute("INSERT INTO library_entries (user_id, document_id) SELECT u.id, d.id FROM documents d, users u "
+                     "WHERE u.email = 'doctor@example.org'")
     assert client.post(f"/api/documents/{no_link}/queue", headers=AUTH).status_code == 422
     r = client.post(f"/api/documents/{with_link}/queue", headers=AUTH)
     assert r.status_code == 202 and r.json()["status"] == "queued"
@@ -180,11 +200,14 @@ def test_spa_fallback_and_no_traversal(client):
 
 
 def _library_doc(settings, title, published, status, terms, listened=False, source="pdf"):
+    """A processed paper in the library of the doctor (the account the client fixture signs in)."""
     with psycopg.connect(settings.database_url, autocommit=True) as conn:
         doc_id = conn.execute(
-            "INSERT INTO documents (source_type, title, published, status, listened, duration_s) "
-            "VALUES (%s, %s, %s, %s, %s, 600) RETURNING id",
-            (source, title, published, status, listened)).fetchone()[0]
+            "INSERT INTO documents (source_type, title, published, status, duration_s) "
+            "VALUES (%s, %s, %s, %s, 600) RETURNING id",
+            (source, title, published, status)).fetchone()[0]
+        conn.execute("INSERT INTO library_entries (user_id, document_id, listened) "
+                     "SELECT id, %s, %s FROM users WHERE email = 'doctor@example.org'", (doc_id, listened))
         for kind, term in terms:
             conn.execute("INSERT INTO document_keywords (document_id, kind, term, source) "
                          "VALUES (%s, %s, %s, 'llm')", (doc_id, kind, term))
