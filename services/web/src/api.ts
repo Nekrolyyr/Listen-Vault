@@ -227,6 +227,14 @@ export interface Citation {
   text: string;
 }
 
+export interface RelatedPaper {
+  id: string;
+  title: string;
+  authors: string[] | null;
+  published: string | null;
+  similarity: number;
+}
+
 export interface Question {
   id: number;
   question: string;
@@ -344,6 +352,7 @@ export const api = {
   backfillKeywords: () => request<{ queued: number }>("POST", "/api/library/keywords/backfill"),
   queue: (id: string) => request<Doc>("POST", `/api/documents/${id}/queue`),
   questions: (id: string) => request<Question[]>("GET", `/api/documents/${id}/questions`),
+  related: (id: string) => request<{ papers: RelatedPaper[] }>("GET", `/api/documents/${id}/related`),
   ask: (id: string, question: string) => request<Question>("POST", `/api/documents/${id}/questions`, { question }),
   zotero: () => request<ZoteroStatus>("GET", "/api/zotero"),
   zoteroSync: () => request<{ queued: boolean }>("POST", "/api/zotero/sync"),

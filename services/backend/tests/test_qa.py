@@ -25,6 +25,12 @@ class QaLlm:
     def truncate(self, text, n):
         return " ".join(text.split()[:n])
 
+    def chat(self, user, *, system=None, n_predict=160, temperature=0.2, stop=None, cache_prompt=False, feature=""):
+        return self.complete(user, n_predict, temperature)
+
+    def chat_json(self, user, schema, *, system=None, n_predict=300, cache_prompt=False, feature=""):
+        return self.complete_json(user, schema, n_predict)
+
     def complete(self, prompt, n_predict=160, temperature=0.2):
         self.prompts.append(prompt)
         return self.answer

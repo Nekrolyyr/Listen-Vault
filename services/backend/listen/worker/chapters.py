@@ -15,7 +15,7 @@ from pathlib import Path
 
 from . import sentences
 from .docmodel import Document, Paragraph, Section
-from .llm import LlmClient, LlmError
+from .llm import LlmClient, LlmError, budget
 
 log = logging.getLogger(__name__)
 
@@ -229,7 +229,8 @@ class Enricher:
         self.calls += 1
         try:
             for temperature in (0.2, 0.6):  # one retry with more variety
-                if answer := accept(self.llm.complete(prompt, n_predict, temperature), min_words, max_words):
+                if answer := accept(self.llm.chat(prompt, n_predict=n_predict, temperature=temperature,
+                                                  feature="titles"), min_words, max_words):
                     return answer
         except LlmError as e:
             log.warning("LLM call failed: %s", e)
@@ -240,7 +241,7 @@ class Enricher:
         if self.llm is None:
             return None
         try:
-            excerpt = self.llm.truncate(text, TITLE_TOKENS)
+            excerpt = self.llm.truncate(text, budget(self.llm, "title"))
         except LlmError:
             return None
         answer = self._ask(f"{excerpt}\n\nWhat is a good short title for the text above?", 24, 1, 10)

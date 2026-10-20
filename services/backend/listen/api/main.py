@@ -17,7 +17,7 @@ from fastapi import Body, Depends, FastAPI, File, HTTPException, Query, Request,
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from .. import appsettings, areas, config, db, jobs, library
+from .. import appsettings, areas, config, db, embeddings, jobs, library
 from ..storage import DocPaths
 from .security import AuthMiddleware
 
@@ -578,7 +578,29 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
             out["keywords"] = _keywords_by_kind(conn.execute(
                 "SELECT kind, term FROM document_keywords WHERE document_id = %s ORDER BY weight DESC, term",
                 (doc_id,)).fetchall())
+            ref = conn.execute("SELECT work_id, topics FROM document_openalex WHERE document_id = %s",
+                               (doc_id,)).fetchone()
+            out["reference_topics"] = ref["topics"] if ref and ref["work_id"] else []
         return out
+
+    @app.get("/api/documents/{doc_id}/related")
+    def related_papers(request: Request, doc_id: UUID):
+        """Papers whose SPECTER2 vectors are closest to this one (empty until the paper has a vector)."""
+        with pool(request).connection() as conn:
+            get_doc(conn, doc_id)
+            return {"papers": embeddings.related(conn, str(doc_id))}
+
+    @app.get("/api/library/review")
+    def review_areas(request: Request, limit: int = Query(50, ge=1, le=200)):
+        """Papers whose area is disputed: fewer than 2 of their 5 nearest filed papers share it (agreement < 0.4).
+        Pinned papers are the user's own placements and are not listed."""
+        with pool(request).connection() as conn:
+            rows = conn.execute(
+                "SELECT d.id, d.title, a.primary_area, a.agreement, a.source FROM document_areas a "
+                "JOIN documents d ON d.id = a.document_id WHERE NOT a.pinned AND a.agreement IS NOT NULL "
+                "AND a.agreement < 0.4 ORDER BY a.agreement, d.created_at LIMIT %s", (limit,)).fetchall()
+        return {"papers": [{"id": str(r["id"]), "title": r["title"], "area": r["primary_area"],
+                            "agreement": r["agreement"], "source": r["source"]} for r in rows]}
 
     @app.get("/api/documents/{doc_id}/questions")
     def list_questions(request: Request, doc_id: UUID):

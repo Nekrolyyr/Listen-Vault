@@ -15,11 +15,11 @@ from typing import Any
 
 from psycopg_pool import ConnectionPool
 
-from .. import appsettings, jobs
+from .. import appsettings, embeddings, jobs
 from ..config import Settings
 from ..storage import DocPaths
 from .. import zotero
-from . import article, audio, boxes, chapters, enrich, fetch, grobid, ocr, pdf_fallback, sentences
+from . import article, audio, boxes, chapters, embed, enrich, fetch, grobid, ocr, pdf_fallback, sentences, tagger
 from .audio import Segment
 from .docmodel import Document, Paragraph
 from .llm import LlmClient
@@ -55,6 +55,7 @@ class Pipeline:
         self.should_stop = should_stop
         self._engine: Engine | None = None
         self._engine_key: tuple | None = None
+        self._tagger: tagger.Tagger | None = None
 
     # ------------------------------------------------------------ helpers
     def _progress(self, job_id: int, stage: str) -> Callable[[int, int], bool]:
@@ -124,6 +125,7 @@ class Pipeline:
         self._fetch(job, paths)
         self._ocr(job, paths)
         doc = self._structure(job, paths)
+        self._embed(job, doc)
         self._enrich(job, paths, doc)
         plans = self._chapters(job, paths, doc, prefs)
         self._synthesize(job, paths, doc, plans, prefs)
@@ -218,6 +220,36 @@ class Pipeline:
             )
         return doc
 
+    def _embed(self, job, doc: Document) -> None:
+        """The paper's SPECTER2 vector (see worker/embed.py). Optional: without it the related papers, the exemplars
+        and the topic clusters wait until ensure_library makes it."""
+        if not self.settings.embeddings:
+            return
+        with self.pool.connection() as conn:
+            done = conn.execute("SELECT 1 FROM document_embeddings WHERE document_id = %s AND model = %s",
+                                (job["document_id"], embeddings.MODEL)).fetchone()
+        if done:
+            return
+        abstract = " ".join(p.text for p in doc.abstract) or " ".join(
+            p.text for s in doc.sections[:2] for p in s.paragraphs[:2] if p.kind == "text")
+        if not (doc.title or abstract):
+            return
+        try:
+            vector = embed.specter(self.settings.models_dir).paper_vectors([(doc.title or "", abstract)])[0]
+        except Exception as e:  # noqa: BLE001 - an optional stage must not fail the document
+            log.warning("paper vector skipped: %s", e)
+            return
+        with self.pool.connection() as conn, conn.transaction():
+            embeddings.store(conn, job["document_id"], vector)
+
+    def _keyword_tagger(self):
+        """The keyword tagger when KEYWORD_TAGGER is on, else None."""
+        if not self.settings.keyword_tagger:
+            return None
+        if self._tagger is None:
+            self._tagger = tagger.Tagger(self.settings.tagger_dir)
+        return self._tagger
+
     def _enrich(self, job, paths: DocPaths, doc: Document) -> None:
         """Search and indexing terms (see enrich.py). Skipped once done; redone by a job with from=enrich."""
         if paths.enriched.exists():
@@ -226,7 +258,7 @@ class Pipeline:
         llm = self.llm if self.llm is not None and self.llm.wait_ready(self.settings.llm_wait_s) else None
         if llm is None:
             log.warning("LLM not available; keywords come from the text only")
-        terms = enrich.extract(doc, llm)
+        terms = enrich.extract(doc, llm, typed=self.settings.keywords_mode == "typed", tagger=self._keyword_tagger())
         with self.pool.connection() as conn, conn.transaction():
             conn.execute("DELETE FROM document_keywords WHERE document_id = %s", (job["document_id"],))
             with conn.cursor() as cur:

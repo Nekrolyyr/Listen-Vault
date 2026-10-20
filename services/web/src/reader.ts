@@ -61,7 +61,9 @@ export function readerView(id: string): View {
     qaText,
     qaSubmit,
   );
-  const qaBox = h("section", { class: "qa" }, h("h2", {}, "Ask about this paper"), qaForm, qaList);
+  const relatedList = h("ul", { class: "related-list" }, h("li", { class: "quiet" }, "Looking for related papers…"));
+  const relatedBox = h("section", { class: "related" }, h("h2", {}, "Related papers"), relatedList);
+  const qaBox = h("section", { class: "qa" }, h("h2", {}, "Ask about this paper"), qaForm, qaList, relatedBox);
   // Splitters: drag to resize the document and the side panel, and the chapters and the question box.
   const splitV = splitter("v", "Resize the side panel");
   const splitH = splitter("h", "Resize the question box");
@@ -373,6 +375,19 @@ export function readerView(id: string): View {
     docPane.replaceChildren(article);
   }
 
+  async function loadRelated(): Promise<void> {
+    try {
+      const { papers } = await api.related(id);
+      if (destroyed) return;
+      relatedList.replaceChildren(...(papers.length
+        ? papers.map((p) => h("li", {}, h("span", { class: "related-title" }, p.title),
+            h("span", { class: "quiet" }, ` ${Math.round(p.similarity * 100)}%`)))
+        : [h("li", { class: "quiet" }, "No related papers yet. They appear once the paper has been processed.")]));
+    } catch {
+      relatedList.replaceChildren(h("li", { class: "quiet" }, "Related papers are not available."));
+    }
+  }
+
   async function loadQuestions(): Promise<void> {
     window.clearTimeout(qaTimer);
     try {
@@ -440,6 +455,7 @@ export function readerView(id: string): View {
       if (first) {
         await setup();
         loadQuestions();
+        loadRelated();
       }
       else player?.update(fresh);
       renderHead();

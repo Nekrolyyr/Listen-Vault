@@ -1,0 +1,33 @@
+{
+  "_note": "Hand labels for the author's own library (task, methods, datasets), written from the abstract and the data sections. Terms are short phrases; matching is lenient (see eval_extraction.py). Review before trusting the scores.",
+  "papers": [
+    {"title": "Breaking the bubble: A case study on the echo chamber effect in Instagram",
+     "task": ["echo chamber effect on instagram"], "methods": ["case study"], "datasets": []},
+    {"title": "Unveiling Community Dynamics on Instagram Political Network",
+     "task": ["community structure of an instagram political network"],
+     "methods": ["community detection", "network backbone extraction"],
+     "datasets": ["instagram comments"]},
+    {"title": "Simple changes to content curation algorithms affect the beliefs people form in a collaborative filtering experiment",
+     "task": ["effects of content curation algorithms on beliefs"],
+     "methods": ["controlled experiment", "collaborative filtering experiment"], "datasets": []},
+    {"title": "QUANTIFICATION OF ECHO CHAMBERS: A METHODOLOGICAL FRAMEWORK CONSIDERING MULTI-PARTY SYSTEMS",
+     "task": ["quantifying echo chambers in social networks"],
+     "methods": ["quantification framework"],
+     "datasets": ["german federal election 2017"]},
+    {"title": "Networks of Conflict and Cooperation",
+     "task": ["review of network research on conflict and cooperation"], "methods": ["literature review"], "datasets": []},
+    {"title": "Visual protest material as empirical data",
+     "task": ["visual analysis of protest material"],
+     "methods": ["visual analytic procedures", "content analysis", "quantitative analysis"],
+     "datasets": ["banners and posters"]},
+    {"title": "Transition Design: A Proposal for a New Area of Design Practice, Study, and Research",
+     "task": ["transition design framework"], "methods": [], "datasets": []},
+    {"title": "The Role of Social Media in the Formation of Collective Consciousness and Contemporary Social Movements",
+     "task": ["role of social media in social movements"],
+     "methods": ["qualitative approach", "literature analysis"],
+     "datasets": ["secondary data"]},
+    {"title": "Measuring Networks in the Field",
+     "task": ["measuring networks through surveys"], "methods": ["network survey"], "datasets": []}
+  ],
+  "excluded": ["Making Social Media Algorithms Social (article with no abstract; labels not reliable)"]
+}

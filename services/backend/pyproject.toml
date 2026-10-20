@@ -24,9 +24,16 @@ worker = [
   "pyyaml>=6.0",
   "ocrmypdf>=16",
 ]
+# SPECTER2 and bge-small (listen/worker/embed.py) and the keyword tagger (worker/tagger.py). torch itself is installed
+# from the CPU index (see the worker Dockerfile); the models are read from MODELS_DIR, not downloaded.
+embed = [
+  "transformers>=4.45,<5",
+  "adapters>=1.0",
+]
 dev = [
   "pytest>=8.0",
   "httpx>=0.27",
+  "pgserver>=0.1.4",
 ]
 
 [project.scripts]

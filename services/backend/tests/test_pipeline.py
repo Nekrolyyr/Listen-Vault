@@ -35,6 +35,30 @@ class ReadyLlm(FakeLlm):
     def wait_ready(self, timeout_s=0):
         return True
 
+    def chat(self, user, *, system=None, n_predict=160, temperature=0.2, stop=None, cache_prompt=False, feature=""):
+        return self.complete(user, n_predict, temperature)
+
+    def chat_json(self, user, schema, *, system=None, n_predict=300, cache_prompt=False, feature=""):
+        return self.complete_json(user, schema, n_predict)
+
+    def complete(self, prompt, n_predict=160, temperature=0.2, *, stop=None, cache_prompt=False):
+        # the field questions of enrich.py get short answers, as BLOOMZ gives them
+        question = prompt.rsplit("Question:", 1)[-1]
+        if "research question" in question:
+            return "pruning heads"
+        if "research methods" in question:
+            return "prune heads"
+        if "dataset, sample or corpus" in question:
+            return "none"
+        return super().complete(prompt, n_predict, temperature, stop=stop, cache_prompt=cache_prompt)
+
+    def complete_json(self, prompt, schema, n_predict=300, *, cache_prompt=False):
+        self.prompts.append(prompt)
+        if "task" in schema.get("properties", {}):  # the typed keyword schema (keywords_mode "typed")
+            return {"task": "pruning heads", "methods": ["prune heads"], "datasets": [],
+                    "topics": ["transformers"], "keywords": ["accuracy"]}
+        return {"topics": ["transformers"], "keywords": ["accuracy"]}
+
 
 def _worker(settings, pool, engine=None):
     engine = engine or FakeEngine()

@@ -1,0 +1,78 @@
+{
+ "_note": "Proposed labels written from the title and abstract (see docs/optimisation-plan.md, phase 0.2). Review before trusting the scores. Area ids are listed in listen/areas.py.",
+ "papers": [
+  {
+   "title": "Visual protest material as empirical data",
+   "primary": "images",
+   "also": [
+    "movements"
+   ],
+   "reviewed": false
+  },
+  {
+   "title": "Networks of Conflict and Cooperation",
+   "primary": "politics",
+   "also": [
+    "movements"
+   ],
+   "reviewed": false
+  },
+  {
+   "title": "Transition Design: A Proposal for a New Area of Design Practice, Study, and Research",
+   "primary": "other",
+   "also": [
+    "health_env"
+   ],
+   "reviewed": false
+  },
+  {
+   "title": "Breaking the bubble: A case study on the echo chamber effect in Instagram",
+   "primary": "social_media",
+   "also": [
+    "misinformation"
+   ],
+   "reviewed": false
+  },
+  {
+   "title": "QUANTIFICATION OF ECHO CHAMBERS: A METHODOLOGICAL FRAMEWORK CONSIDERING MULTI-PARTY SYSTEMS Research paper",
+   "primary": "social_media",
+   "also": [
+    "politics"
+   ],
+   "reviewed": false
+  },
+  {
+   "title": "Unveiling Community Dynamics on Instagram Political Network",
+   "primary": "social_media",
+   "also": [
+    "politics",
+    "digital_methods"
+   ],
+   "reviewed": false
+  },
+  {
+   "title": "The Role of Social Media in the Formation of Collective Consciousness and Contemporary Social Movements",
+   "primary": "movements",
+   "also": [
+    "social_media"
+   ],
+   "reviewed": false
+  },
+  {
+   "title": "Simple changes to content curation algorithms affect the beliefs people form in a collaborative filtering experiment",
+   "primary": "social_media",
+   "also": [
+    "misinformation"
+   ],
+   "reviewed": false
+  },
+  {
+   "title": "Measuring Networks in the Field",
+   "primary": "politics",
+   "also": [
+    "digital_methods"
+   ],
+   "reviewed": false
+  }
+ ]
+}

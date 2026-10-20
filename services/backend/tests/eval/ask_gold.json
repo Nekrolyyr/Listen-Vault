@@ -1,0 +1,85 @@
+{
+ "_note": "Questions with the phrase that holds the answer. Expected pages are the pages of the paragraphs containing the phrase (checked against structure.json). Proposed; review before trusting the scores.",
+ "papers": [
+  {
+   "title": "Breaking the bubble: A case study on the echo chamber effect in Instagram",
+   "questions": [
+    {
+     "question": "Which Instagram features does the study examine?",
+     "evidence": "Explore page"
+    }
+   ]
+  },
+  {
+   "title": "Transition Design: A Proposal for a New Area of Design Practice, Study, and Research",
+   "questions": [
+    {
+     "question": "What is cosmopolitan localism?",
+     "evidence": "cosmopolitan localism"
+    }
+   ]
+  },
+  {
+   "title": "Unveiling Community Dynamics on Instagram Political Network",
+   "questions": [
+    {
+     "question": "How does the paper model the Instagram commenter interactions?",
+     "evidence": "backbone"
+    },
+    {
+     "question": "Which community detection method is used?",
+     "evidence": "Louvain"
+    }
+   ]
+  },
+  {
+   "title": "Visual protest material as empirical data",
+   "questions": [
+    {
+     "question": "Which analysis method is applied to the visual protest material?",
+     "evidence": "content analysis"
+    },
+    {
+     "question": "Why is triangulation of methods mentioned?",
+     "evidence": "triangulation"
+    }
+   ]
+  },
+  {
+   "title": "QUANTIFICATION OF ECHO CHAMBERS: A METHODOLOGICAL FRAMEWORK CONSIDERING MULTI-PARTY SYSTEMS Research paper",
+   "questions": [
+    {
+     "question": "What does the framework extend to?",
+     "evidence": "multi-party"
+    }
+   ]
+  },
+  {
+   "title": "Measuring Networks in the Field",
+   "questions": [
+    {
+     "question": "Why do small samples cause problems when measuring networks?",
+     "evidence": "Small samples"
+    }
+   ]
+  },
+  {
+   "title": "Simple changes to content curation algorithms affect the beliefs people form in a collaborative filtering experiment",
+   "questions": [
+    {
+     "question": "How was the content inventory created?",
+     "evidence": "content inventory"
+    }
+   ]
+  },
+  {
+   "title": "Networks of Conflict and Cooperation",
+   "questions": [
+    {
+     "question": "What role do civilian networks play in conflict?",
+     "evidence": "Civilian networks also matter"
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,19 @@
+{
+ "_note": "Proposed groups of the 9 gold papers that belong together (phase 0.3). Papers in no group are left out of the score. Titles must match the gold titles. Review before trusting the score.",
+ "groups": [
+  [
+   "Breaking the bubble: A case study on the echo chamber effect in Instagram",
+   "QUANTIFICATION OF ECHO CHAMBERS: A METHODOLOGICAL FRAMEWORK CONSIDERING MULTI-PARTY SYSTEMS Research paper",
+   "Unveiling Community Dynamics on Instagram Political Network",
+   "Simple changes to content curation algorithms affect the beliefs people form in a collaborative filtering experiment"
+  ],
+  [
+   "Networks of Conflict and Cooperation",
+   "Measuring Networks in the Field"
+  ],
+  [
+   "The Role of Social Media in the Formation of Collective Consciousness and Contemporary Social Movements",
+   "Visual protest material as empirical data"
+  ]
+ ]
+}

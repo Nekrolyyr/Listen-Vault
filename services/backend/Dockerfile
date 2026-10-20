@@ -26,6 +26,8 @@ FROM base AS worker
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg tesseract-ocr tesseract-ocr-eng ghostscript \
  && rm -rf /var/lib/apt/lists/*
-RUN pip install ".[worker]"
+# torch from the CPU index: the GPU belongs to the LLM, and the CUDA build would add gigabytes
+RUN pip install --index-url https://download.pytorch.org/whl/cpu torch \
+ && pip install ".[worker,embed]"
 USER app
 CMD ["listen-worker"]

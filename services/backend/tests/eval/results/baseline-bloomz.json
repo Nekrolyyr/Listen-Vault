@@ -1,0 +1,815 @@
+{
+ "label": "baseline-bloomz",
+ "config": {
+  "keywords": "legacy",
+  "qa": "bm25",
+  "chat_format": "client default"
+ },
+ "keywords": {
+  "summary": {
+   "task": {
+    "precision": 0.25,
+    "recall": 0.11,
+    "predicted": 4,
+    "gold": 9,
+    "junk": 0
+   },
+   "methods": {
+    "precision": 0.15,
+    "recall": 0.15,
+    "predicted": 13,
+    "gold": 13,
+    "junk": 0
+   },
+   "datasets": {
+    "precision": 0.14,
+    "recall": 0.5,
+    "predicted": 21,
+    "gold": 4,
+    "junk": 0
+   }
+  },
+  "papers": [
+   {
+    "title": "Visual protest material as empirical data",
+    "seconds": 10,
+    "sources": {
+     "task": [],
+     "methods": [
+      "llm"
+     ],
+     "datasets": [
+      "rule"
+     ]
+    },
+    "fields": {
+     "task": {
+      "preds": [],
+      "tp_pred": 0,
+      "n_pred": 0,
+      "tp_gold": 0,
+      "n_gold": 1,
+      "junk": []
+     },
+     "methods": {
+      "preds": [
+       "semantic analysis"
+      ],
+      "tp_pred": 0,
+      "n_pred": 1,
+      "tp_gold": 0,
+      "n_gold": 3,
+      "junk": []
+     },
+     "datasets": {
+      "preds": [
+       "visual protest material",
+       "166 banners"
+      ],
+      "tp_pred": 0,
+      "n_pred": 2,
+      "tp_gold": 0,
+      "n_gold": 1,
+      "junk": []
+     }
+    }
+   },
+   {
+    "title": "Networks of Conflict and Cooperation",
+    "seconds": 11,
+    "sources": {
+     "task": [],
+     "methods": [
+      "rule"
+     ],
+     "datasets": [
+      "rule"
+     ]
+    },
+    "fields": {
+     "task": {
+      "preds": [],
+      "tp_pred": 0,
+      "n_pred": 0,
+      "tp_gold": 0,
+      "n_gold": 1,
+      "junk": []
+     },
+     "methods": {
+      "preds": [
+       "interviews",
+       "experiment",
+       "network analysis"
+      ],
+      "tp_pred": 0,
+      "n_pred": 3,
+      "tp_gold": 0,
+      "n_gold": 1,
+      "junk": []
+     },
+     "datasets": {
+      "preds": [
+       "structure of networks",
+       "insurgent groups",
+       "twitter"
+      ],
+      "tp_pred": 0,
+      "n_pred": 3,
+      "tp_gold": 0,
+      "n_gold": 0,
+      "junk": []
+     }
+    }
+   },
+   {
+    "title": "Transition Design: A Proposal for a New Area of Design Practice, Study",
+    "seconds": 12,
+    "sources": {
+     "task": [
+      "llm"
+     ],
+     "methods": [],
+     "datasets": []
+    },
+    "fields": {
+     "task": {
+      "preds": [
+       "we need transition design"
+      ],
+      "tp_pred": 1,
+      "n_pred": 1,
+      "tp_gold": 1,
+      "n_gold": 1,
+      "junk": []
+     },
+     "methods": {
+      "preds": [],
+      "tp_pred": 0,
+      "n_pred": 0,
+      "tp_gold": 0,
+      "n_gold": 0,
+      "junk": []
+     },
+     "datasets": {
+      "preds": [],
+      "tp_pred": 0,
+      "n_pred": 0,
+      "tp_gold": 0,
+      "n_gold": 0,
+      "junk": []
+     }
+    }
+   },
+   {
+    "title": "Breaking the bubble: A case study on the echo chamber effect in Instag",
+    "seconds": 11,
+    "sources": {
+     "task": [],
+     "methods": [
+      "rule"
+     ],
+     "datasets": [
+      "rule"
+     ]
+    },
+    "fields": {
+     "task": {
+      "preds": [],
+      "tp_pred": 0,
+      "n_pred": 0,
+      "tp_gold": 0,
+      "n_gold": 1,
+      "junk": []
+     },
+     "methods": {
+      "preds": [
+       "case study"
+      ],
+      "tp_pred": 1,
+      "n_pred": 1,
+      "tp_gold": 1,
+      "n_gold": 1,
+      "junk": []
+     },
+     "datasets": {
+      "preds": [
+       "instagram"
+      ],
+      "tp_pred": 0,
+      "n_pred": 1,
+      "tp_gold": 0,
+      "n_gold": 0,
+      "junk": []
+     }
+    }
+   },
+   {
+    "title": "The Role of Social Media in the Formation of Collective Consciousness ",
+    "seconds": 9,
+    "sources": {
+     "task": [],
+     "methods": [
+      "llm"
+     ],
+     "datasets": [
+      "rule"
+     ]
+    },
+    "fields": {
+     "task": {
+      "preds": [],
+      "tp_pred": 0,
+      "n_pred": 0,
+      "tp_gold": 0,
+      "n_gold": 1,
+      "junk": []
+     },
+     "methods": {
+      "preds": [
+       "descriptive qualitative"
+      ],
+      "tp_pred": 0,
+      "n_pred": 1,
+      "tp_gold": 0,
+      "n_gold": 2,
+      "junk": []
+     },
+     "datasets": {
+      "preds": [
+       "ministry of communication",
+       "field observations",
+       "literature studies"
+      ],
+      "tp_pred": 0,
+      "n_pred": 3,
+      "tp_gold": 0,
+      "n_gold": 1,
+      "junk": []
+     }
+    }
+   },
+   {
+    "title": "QUANTIFICATION OF ECHO CHAMBERS: A METHODOLOGICAL FRAMEWORK CONSIDERIN",
+    "seconds": 12,
+    "sources": {
+     "task": [
+      "llm"
+     ],
+     "methods": [
+      "llm"
+     ],
+     "datasets": [
+      "rule"
+     ]
+    },
+    "fields": {
+     "task": {
+      "preds": [
+       "we quantify echo chambers"
+      ],
+      "tp_pred": 0,
+      "n_pred": 1,
+      "tp_gold": 0,
+      "n_gold": 1,
+      "junk": []
+     },
+     "methods": {
+      "preds": [
+       "quantification"
+      ],
+      "tp_pred": 0,
+      "n_pred": 1,
+      "tp_gold": 0,
+      "n_gold": 1,
+      "junk": []
+     },
+     "datasets": {
+      "preds": [
+       "german federal election of 2017",
+       "osns",
+       "german federal election 2017"
+      ],
+      "tp_pred": 2,
+      "n_pred": 3,
+      "tp_gold": 1,
+      "n_gold": 1,
+      "junk": []
+     }
+    }
+   },
+   {
+    "title": "Unveiling Community Dynamics on Instagram Political Network",
+    "seconds": 11,
+    "sources": {
+     "task": [],
+     "methods": [
+      "rule"
+     ],
+     "datasets": [
+      "rule"
+     ]
+    },
+    "fields": {
+     "task": {
+      "preds": [],
+      "tp_pred": 0,
+      "n_pred": 0,
+      "tp_gold": 0,
+      "n_gold": 1,
+      "junk": []
+     },
+     "methods": {
+      "preds": [
+       "community detection"
+      ],
+      "tp_pred": 1,
+      "n_pred": 1,
+      "tp_gold": 1,
+      "n_gold": 2,
+      "junk": []
+     },
+     "datasets": {
+      "preds": [
+       "instagram comments",
+       "instagram profiles",
+       "instagram"
+      ],
+      "tp_pred": 1,
+      "n_pred": 3,
+      "tp_gold": 1,
+      "n_gold": 1,
+      "junk": []
+     }
+    }
+   },
+   {
+    "title": "Measuring Networks in the Field",
+    "seconds": 11,
+    "sources": {
+     "task": [
+      "llm"
+     ],
+     "methods": [
+      "rule"
+     ],
+     "datasets": [
+      "rule"
+     ]
+    },
+    "fields": {
+     "task": {
+      "preds": [
+       "you elicit social network data"
+      ],
+      "tp_pred": 0,
+      "n_pred": 1,
+      "tp_gold": 0,
+      "n_gold": 1,
+      "junk": []
+     },
+     "methods": {
+      "preds": [
+       "survey",
+       "clustering"
+      ],
+      "tp_pred": 0,
+      "n_pred": 2,
+      "tp_gold": 0,
+      "n_gold": 1,
+      "junk": []
+     },
+     "datasets": {
+      "preds": [
+       "networks among individuals",
+       "levenshtein-1",
+       "levenshtein-2"
+      ],
+      "tp_pred": 0,
+      "n_pred": 3,
+      "tp_gold": 0,
+      "n_gold": 0,
+      "junk": []
+     }
+    }
+   },
+   {
+    "title": "Simple changes to content curation algorithms affect the beliefs peopl",
+    "seconds": 10,
+    "sources": {
+     "task": [
+      "llm"
+     ],
+     "methods": [
+      "rule"
+     ],
+     "datasets": [
+      "rule"
+     ]
+    },
+    "fields": {
+     "task": {
+      "preds": [
+       "social media algorithms affect users' beliefs"
+      ],
+      "tp_pred": 0,
+      "n_pred": 1,
+      "tp_gold": 0,
+      "n_gold": 1,
+      "junk": []
+     },
+     "methods": {
+      "preds": [
+       "survey",
+       "field experiment",
+       "regression"
+      ],
+      "tp_pred": 0,
+      "n_pred": 3,
+      "tp_gold": 0,
+      "n_gold": 2,
+      "junk": []
+     },
+     "datasets": {
+      "preds": [
+       "participants' interactions",
+       "subjective topics",
+       "objective topics"
+      ],
+      "tp_pred": 0,
+      "n_pred": 3,
+      "tp_gold": 0,
+      "n_gold": 0,
+      "junk": []
+     }
+    }
+   }
+  ]
+ },
+ "areas": {
+  "summary": {
+   "primary_accuracy": 0.44,
+   "papers": 9,
+   "also_precision": 0.18,
+   "also_recall": 0.3
+  },
+  "papers": [
+   {
+    "title": "Visual protest material as empirical data",
+    "seconds": 4,
+    "predicted": "movements",
+    "gold": "images",
+    "source": "llm",
+    "primary_ok": false,
+    "also_predicted": [
+     "social_media"
+    ],
+    "also_gold": [
+     "movements"
+    ],
+    "also_hits": 0
+   },
+   {
+    "title": "Networks of Conflict and Cooperation",
+    "seconds": 4,
+    "predicted": "social_media",
+    "gold": "politics",
+    "source": "llm",
+    "primary_ok": false,
+    "also_predicted": [
+     "movements",
+     "news"
+    ],
+    "also_gold": [
+     "movements"
+    ],
+    "also_hits": 1
+   },
+   {
+    "title": "Transition Design: A Proposal for a New Area of Design Practice, Study",
+    "seconds": 5,
+    "predicted": "social_media",
+    "gold": "other",
+    "source": "llm",
+    "primary_ok": false,
+    "also_predicted": [
+     "movements",
+     "politics"
+    ],
+    "also_gold": [
+     "health_env"
+    ],
+    "also_hits": 0
+   },
+   {
+    "title": "Breaking the bubble: A case study on the echo chamber effect in Instag",
+    "seconds": 5,
+    "predicted": "social_media",
+    "gold": "social_media",
+    "source": "llm",
+    "primary_ok": true,
+    "also_predicted": [
+     "movements",
+     "news"
+    ],
+    "also_gold": [
+     "misinformation"
+    ],
+    "also_hits": 0
+   },
+   {
+    "title": "The Role of Social Media in the Formation of Collective Consciousness ",
+    "seconds": 4,
+    "predicted": "social_media",
+    "gold": "movements",
+    "source": "llm",
+    "primary_ok": false,
+    "also_predicted": [
+     "movements",
+     "news"
+    ],
+    "also_gold": [
+     "social_media"
+    ],
+    "also_hits": 0
+   },
+   {
+    "title": "QUANTIFICATION OF ECHO CHAMBERS: A METHODOLOGICAL FRAMEWORK CONSIDERIN",
+    "seconds": 5,
+    "predicted": "social_media",
+    "gold": "social_media",
+    "source": "llm",
+    "primary_ok": true,
+    "also_predicted": [
+     "news",
+     "politics"
+    ],
+    "also_gold": [
+     "politics"
+    ],
+    "also_hits": 1
+   },
+   {
+    "title": "Unveiling Community Dynamics on Instagram Political Network",
+    "seconds": 5,
+    "predicted": "social_media",
+    "gold": "social_media",
+    "source": "llm",
+    "primary_ok": true,
+    "also_predicted": [
+     "news",
+     "politics"
+    ],
+    "also_gold": [
+     "digital_methods",
+     "politics"
+    ],
+    "also_hits": 1
+   },
+   {
+    "title": "Measuring Networks in the Field",
+    "seconds": 5,
+    "predicted": "social_media",
+    "gold": "politics",
+    "source": "llm",
+    "primary_ok": false,
+    "also_predicted": [
+     "movements",
+     "politics"
+    ],
+    "also_gold": [
+     "digital_methods"
+    ],
+    "also_hits": 0
+   },
+   {
+    "title": "Simple changes to content curation algorithms affect the beliefs peopl",
+    "seconds": 4,
+    "predicted": "social_media",
+    "gold": "social_media",
+    "source": "llm",
+    "primary_ok": true,
+    "also_predicted": [
+     "movements",
+     "news"
+    ],
+    "also_gold": [
+     "misinformation"
+    ],
+    "also_hits": 0
+   }
+  ]
+ },
+ "ask": {
+  "summary": {
+   "questions": 10,
+   "answered": 0.6,
+   "page_hit": 1.0,
+   "scored": 6,
+   "mean_seconds": 5.9
+  },
+  "questions": [
+   {
+    "title": "Visual protest material as empirical data",
+    "question": "Which analysis method is applied to the visual protest material?",
+    "expected_pages": [
+     4,
+     9,
+     16
+    ],
+    "seconds": 8.1,
+    "answered": false,
+    "page_hit": null,
+    "answer": null,
+    "cited": []
+   },
+   {
+    "title": "Visual protest material as empirical data",
+    "question": "Why is triangulation of methods mentioned?",
+    "expected_pages": [
+     16
+    ],
+    "seconds": 2.5,
+    "answered": true,
+    "page_hit": true,
+    "answer": "To provide further insights.",
+    "cited": [
+     16
+    ]
+   },
+   {
+    "title": "Networks of Conflict and Cooperation",
+    "question": "What role do civilian networks play in conflict?",
+    "expected_pages": [
+     13
+    ],
+    "seconds": 2.7,
+    "answered": true,
+    "page_hit": true,
+    "answer": "Continue to play a role.",
+    "cited": [
+     13
+    ]
+   },
+   {
+    "title": "Transition Design: A Proposal for a New Area of Design Practice, Study",
+    "question": "What is cosmopolitan localism?",
+    "expected_pages": [
+     6
+    ],
+    "seconds": 4.5,
+    "answered": true,
+    "page_hit": true,
+    "answer": "Small, diverse, local, and place-based communities.",
+    "cited": [
+     6
+    ]
+   },
+   {
+    "title": "Breaking the bubble: A case study on the echo chamber effect in Instag",
+    "question": "Which Instagram features does the study examine?",
+    "expected_pages": [
+     1,
+     3,
+     4
+    ],
+    "seconds": 8.2,
+    "answered": true,
+    "page_hit": true,
+    "answer": "Personalised feeds, Explore page, and targeted content.",
+    "cited": [
+     1
+    ]
+   },
+   {
+    "title": "QUANTIFICATION OF ECHO CHAMBERS: A METHODOLOGICAL FRAMEWORK CONSIDERIN",
+    "question": "What does the framework extend to?",
+    "expected_pages": [
+     3,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     13,
+     14
+    ],
+    "seconds": 7.0,
+    "answered": false,
+    "page_hit": null,
+    "answer": null,
+    "cited": []
+   },
+   {
+    "title": "Unveiling Community Dynamics on Instagram Political Network",
+    "question": "How does the paper model the Instagram commenter interactions?",
+    "expected_pages": [
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ],
+    "seconds": 7.3,
+    "answered": false,
+    "page_hit": null,
+    "answer": null,
+    "cited": []
+   },
+   {
+    "title": "Unveiling Community Dynamics on Instagram Political Network",
+    "question": "Which community detection method is used?",
+    "expected_pages": [
+     2,
+     4,
+     5,
+     6
+    ],
+    "seconds": 9.0,
+    "answered": false,
+    "page_hit": null,
+    "answer": null,
+    "cited": []
+   },
+   {
+    "title": "Measuring Networks in the Field",
+    "question": "Why do small samples cause problems when measuring networks?",
+    "expected_pages": [
+     4,
+     16,
+     17
+    ],
+    "seconds": 4.8,
+    "answered": true,
+    "page_hit": true,
+    "answer": "Because respondents are interrelated.",
+    "cited": [
+     16
+    ]
+   },
+   {
+    "title": "Simple changes to content curation algorithms affect the beliefs peopl",
+    "question": "How was the content inventory created?",
+    "expected_pages": [
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     12,
+     13
+    ],
+    "seconds": 4.8,
+    "answered": true,
+    "page_hit": true,
+    "answer": "Engagement-, bridging-or intelligence-based ranking.",
+    "cited": [
+     2
+    ]
+   }
+  ]
+ },
+ "topics": {
+  "summary": {
+   "ari": 0.0,
+   "topics": 3,
+   "papers": 8
+  },
+  "topics": [
+   {
+    "name": "Social media use",
+    "terms": [
+     "social",
+     "content",
+     "media",
+     "survey"
+    ]
+   },
+   {
+    "name": "Social media",
+    "terms": [
+     "network",
+     "echo",
+     "instagram",
+     "political"
+    ]
+   },
+   {
+    "name": "Social network",
+    "terms": [
+     "network structure",
+     "networks",
+     "people",
+     "ties"
+    ]
+   }
+  ]
+ }
+}

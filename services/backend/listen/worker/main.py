@@ -80,10 +80,11 @@ class Worker:
             qa.run(self.pool, self.settings, self.pipeline.llm, job)
             return
         if job["kind"] == "topics":
-            topics.rebuild(self.pool, self.pipeline.llm)
+            topics.rebuild(self.pool, self.pipeline.llm, self.settings)
             return
         if job["kind"] == "areas":
-            classify.run(self.pool, self.settings.docs_dir, self.pipeline.llm, job["id"], job["options"] or {})
+            classify.run(self.pool, self.settings.docs_dir, self.pipeline.llm, job["id"], job["options"] or {},
+                         self.settings)
             return
         raise PipelineError(f"Unknown job kind {job['kind']!r}")
 

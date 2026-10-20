@@ -81,6 +81,14 @@ services:
       GROBID_URL: http://grobid:8070
       TTS_THREADS: ${TTS_THREADS:-8}
       OCR_JOBS: ${OCR_JOBS:-8}
+      LLM_FORMAT: ${LLM_FORMAT:-chatml}
+      KEYWORDS_MODE: ${KEYWORDS_MODE:-typed}
+      KEYWORD_TAGGER: ${KEYWORD_TAGGER:-off}
+      EMBEDDINGS: ${EMBEDDINGS:-on}
+      AREAS_EXEMPLARS: ${AREAS_EXEMPLARS:-off}
+      TOPICS_MODE: ${TOPICS_MODE:-embeddings}
+      QA_RETRIEVAL: ${QA_RETRIEVAL:-bm25}
+      OPENALEX_EMAIL: ${OPENALEX_EMAIL:-}
     volumes:
       - ./data/library:/data
       - ./models:/models:ro
@@ -88,7 +96,7 @@ services:
     stop_grace_period: 60s
 
   llm:
-    image: ghcr.io/ggml-org/llama.cpp:server-cuda-b11515
+    image: ${LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda-b11515}
     container_name: listen-llm
     restart: unless-stopped
     environment:
@@ -103,9 +111,11 @@ services:
               capabilities: [gpu]
     command:
       - --model
-      - /models/llm/bloomz-7b1-Q4_K_M.gguf
+      - /models/llm/${LLM_MODEL_FILE:-Qwen3-8B-Q4_K_M.gguf}
       - --ctx-size
-      - "2048"
+      - ${LLM_CTX_SIZE:-4096}
+      - --cache-type-k
+      - ${LLM_KV_CACHE:-q8_0}
       - --n-gpu-layers
       - ${LLM_GPU_LAYERS:-99}
       - --threads

@@ -93,7 +93,13 @@ class FakeLlm:
     def truncate(self, text, n):
         return " ".join(text.split()[:n])
 
-    def complete(self, prompt, n_predict=160, temperature=0.2):
+    def chat(self, user, *, system=None, n_predict=160, temperature=0.2, stop=None, cache_prompt=False, feature=""):
+        return self.complete(user, n_predict, temperature)
+
+    def chat_json(self, user, schema, *, system=None, n_predict=300, cache_prompt=False, feature=""):
+        return self.complete_json(user, schema, n_predict)
+
+    def complete(self, prompt, n_predict=160, temperature=0.2, *, stop=None, cache_prompt=False):
         self.prompts.append(prompt)
         if self.answers is not None:
             return self.answers.pop(0) if self.answers else ""
@@ -101,7 +107,7 @@ class FakeLlm:
             return "Attention Pruning"
         return "The section explains how attention heads are pruned. It reports the effect on accuracy."
 
-    def complete_json(self, prompt, schema, n_predict=300):
+    def complete_json(self, prompt, schema, n_predict=300, *, cache_prompt=False):
         self.prompts.append(prompt)
         return {"task": "pruning", "methods": ["head pruning"], "datasets": [], "topics": ["attention"],
                 "keywords": ["transformers"]}

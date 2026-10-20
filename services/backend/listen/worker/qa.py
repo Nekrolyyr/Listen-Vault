@@ -1,9 +1,9 @@
 """Questions about a paper, answered from the paper's own passages.
 
-Retrieval is BM25 over passages of about PASSAGE_WORDS words (no embedding model, so it fits the CPU budget).
-The best passages go into one prompt, numbered; BLOOMZ-7b1 must cite them as [n]. Citations give the page,
-so the reader can jump to the place the answer comes from. Answers that are empty, loop, or cite nothing
-are rejected and asked again once.
+Retrieval: BM25 over passages of about PASSAGE_WORDS words, fused with the ranking by passage vectors (bge-small, see
+worker/embed.py) by reciprocal rank fusion. The fused best passages go into one prompt, numbered; the model must cite
+them as [n]. Citations give the page, so the reader can jump to the place the answer comes from. Answers that are
+empty, loop, or cite nothing are rejected and asked again once. QA_RETRIEVAL=bm25 turns the vectors off.
 """
 from __future__ import annotations
 
@@ -18,17 +18,18 @@ from psycopg_pool import ConnectionPool
 
 from .. import config
 from ..storage import DocPaths
+from ..vectors import rrf
 from .docmodel import Document
-from . import sentences
+from . import embed, sentences
 from .enrich import STOPWORDS
-from .llm import LlmClient, LlmError
+from .llm import LlmClient, LlmError, budget
 
 log = logging.getLogger(__name__)
 
 PASSAGE_WORDS = 150
-TOP_K = 4
-CONTEXT_TOKENS = 1000   # passages put into the prompt (context is 2,048 incl. question and answer)
-ANSWER_TOKENS = 200
+TOP_K = 4               # passages for keyword search alone
+TOP_K_HYBRID = 8        # passages after fusing keyword and vector rankings
+SYSTEM = "You answer questions about a scientific paper from numbered passages. Cite them as [n]."
 K1, B = 1.5, 0.75
 TOKEN = re.compile(r"[a-z0-9][a-z0-9-]+")
 CITE = re.compile(r"\[(\d+)\]")
@@ -114,25 +115,40 @@ def rank(question: str, items: list[Passage], k: int = TOP_K) -> list[Passage]:
     return [p for _, p in scored[:k]]
 
 
-def fit(llm: LlmClient, candidates: list[Passage], budget: int = CONTEXT_TOKENS) -> list[Passage]:
+def fit(llm: LlmClient, candidates: list[Passage], limit: int | None = None) -> list[Passage]:
     """Keep the best passages whose total length fits the context budget; renumber them 1..n."""
+    limit = budget(llm, "context") if limit is None else limit
     chosen: list[Passage] = []
     used = 0
     for p in candidates:
         cost = llm.count(p.text)
-        if used + cost > budget:
+        if used + cost > limit:
             continue
         used += cost
         chosen.append(Passage(len(chosen) + 1, p.text, p.page, p.title))
     return chosen
 
 
+def retrieve(question: str, items: list[Passage], encoder=None) -> list[Passage]:
+    """The passages to show the model, best first. Without an encoder: BM25 alone. With one: the BM25 ranking and the
+    vector ranking are fused, so a passage that shares few words with the question can still come through."""
+    if encoder is None:
+        return rank(question, items)
+    bm25 = [p.n for p in rank(question, items, k=len(items))]
+    query = encoder.query_vector(question)
+    vecs = encoder.passage_vectors([p.text for p in items])
+    order = sorted(range(len(items)), key=lambda i: -sum(x * y for x, y in zip(query, vecs[i])))
+    dense = [items[i].n for i in order]
+    by_n = {p.n: p for p in items}
+    return [by_n[n] for n in rrf([bm25, dense])[:TOP_K_HYBRID]]
+
+
 def prompt(question: str, context: list[Passage]) -> str:
     blocks = "\n\n".join(f"[{p.n}] ({p.title or 'Text'}, p. {p.page or '?'}) {p.text}" for p in context)
     return (f"Passages from a scientific paper:\n\n{blocks}\n\n"
             f"Question: {question}\n"
-            "Answer in two or three sentences, using only the passages above. Cite the passage you use, like [1].\n"
-            "Answer:")
+            "Answer in two or three sentences, using only the passages above. Cite the passage you use, like [1]. "
+            "If the passages do not answer the question, say so.")
 
 
 def clean(answer: str, n: int) -> tuple[str, list[int]] | None:
@@ -154,13 +170,14 @@ def clean(answer: str, n: int) -> tuple[str, list[int]] | None:
     return text[0].upper() + text[1:], list(dict.fromkeys(cited))
 
 
-def answer(llm: LlmClient, document: Document, question: str) -> tuple[str, list[dict]] | None:
-    context = fit(llm, rank(question, passages(document)))
+def answer(llm: LlmClient, document: Document, question: str, encoder=None) -> tuple[str, list[dict]] | None:
+    context = fit(llm, retrieve(question, passages(document), encoder))
     if not context:
         return None
     for temperature in (0.2, 0.6):  # one retry with more variety
         try:
-            raw = llm.complete(prompt(question, context), ANSWER_TOKENS, temperature)
+            raw = llm.chat(prompt(question, context), system=SYSTEM, n_predict=budget(llm, "answer"),
+                           temperature=temperature, feature="ask")
         except LlmError as e:
             log.warning("question answering failed: %s", e)
             return None
@@ -186,7 +203,8 @@ def run(pool: ConnectionPool, settings: config.Settings, llm: LlmClient | None, 
     elif not structure.exists():
         error = "This paper has no text yet."
     else:
-        result = answer(llm, Document.load(structure), row["question"])
+        encoder = embed.passage_encoder(settings.models_dir) if settings.qa_retrieval == "hybrid" else None
+        result = answer(llm, Document.load(structure), row["question"], encoder)
         if result is None:
             error = "The model could not answer from this paper. Try a more specific question."
     with pool.connection() as conn, conn.transaction():
