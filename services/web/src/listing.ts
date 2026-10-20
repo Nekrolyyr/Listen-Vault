@@ -20,7 +20,7 @@ export interface Listing {
   destroy(): void;
 }
 
-const SOURCES: [string, string][] = [["", "All sources"], ["pdf", "PDF"], ["url", "Article or link"], ["zotero", "From Zotero"]];
+const SOURCES: [string, string][] = [["", "All sources"], ["pdf", "PDF"], ["url", "Article or link"]];
 
 export function listing(opts: ListingOptions = {}): Listing {
   let destroyed = false;

@@ -121,25 +121,6 @@ def test_keywords_backfill_queues_ready_documents_without_keywords(client, setti
     assert detail["keywords"]["topic"] == ["sleep"] and detail["keywords"]["task"] == []
 
 
-def test_zotero_status_and_queue_of_catalogued_items(client, settings):
-    status = client.get("/api/zotero", headers=AUTH).json()
-    assert status["configured"] is False
-    assert client.post("/api/zotero/sync", headers=AUTH).status_code == 503
-    with psycopg.connect(settings.database_url, autocommit=True) as conn:
-        with_link = conn.execute("INSERT INTO documents (source_type, source_url, title, status) "
-                                 "VALUES ('url', 'https://doi.org/10.1/x', 'A', 'catalogued') RETURNING id").fetchone()[0]
-        no_link = conn.execute("INSERT INTO documents (source_type, title, status) "
-                               "VALUES ('url', 'B', 'catalogued') RETURNING id").fetchone()[0]
-        # the Zotero sync puts its items in the library of the administrator who runs it
-        conn.execute("INSERT INTO library_entries (user_id, document_id) SELECT u.id, d.id FROM documents d, users u "
-                     "WHERE u.email = 'doctor@example.org'")
-    assert client.post(f"/api/documents/{no_link}/queue", headers=AUTH).status_code == 422
-    r = client.post(f"/api/documents/{with_link}/queue", headers=AUTH)
-    assert r.status_code == 202 and r.json()["status"] == "queued"
-    assert client.post(f"/api/documents/{with_link}/queue", headers=AUTH).status_code == 409
-    assert client.get("/api/zotero", headers=AUTH).json()["catalogued"] == 1
-
-
 def test_questions_need_a_processed_paper(client, settings):
     doc_id = client.post("/api/documents/url", json={"url": "https://example.org/a"}, headers=AUTH).json()["id"]
     body = {"question": "What is the main result?"}
@@ -234,7 +215,7 @@ def test_library_filters_facets_and_graph(client, settings):
 
     facets = client.get("/api/library/facets", headers=AUTH).json()
     assert facets["total"] == 3 and facets["audio_s"] == 1800 and facets["listened_audio_s"] == 600
-    assert facets["source"] == {"pdf": 2, "url": 1, "zotero": 0}
+    assert facets["source"] == {"pdf": 2, "url": 1}
     assert facets["years"] == [{"year": 2019, "count": 1}, {"year": 2024, "count": 2}]
     assert facets["year_bounds"] == [2019, 2024]
     narrowed_years = client.get("/api/library/facets?year_from=2024", headers=AUTH).json()
@@ -278,33 +259,6 @@ def test_timeline_and_topics(client, settings):
                        "documents": 4}]
     by_topic = client.get(f"/api/library/timeline?topic={topic_id}", headers=AUTH).json()
     assert by_topic["label"] == "Sleep and memory" and len(by_topic["items"]) == 4
-
-
-def test_queue_all_catalogued_is_manual_and_skips_unlinked_items(client, settings):
-    with psycopg.connect(settings.database_url, autocommit=True) as conn:
-        conn.execute("INSERT INTO documents (source_type, title, status) VALUES ('pdf', 'With PDF', 'catalogued')")
-        conn.execute("INSERT INTO documents (source_type, source_url, title, status) "
-                     "VALUES ('url', 'https://doi.org/10.1/x', 'With link', 'catalogued')")
-        conn.execute("INSERT INTO documents (source_type, title, status) VALUES ('url', 'Nothing', 'catalogued')")
-    with psycopg.connect(settings.database_url, autocommit=True) as conn:
-        assert conn.execute("SELECT count(*) FROM jobs").fetchone()[0] == 0  # importing queued nothing
-    assert client.post("/api/zotero/queue-all", headers=AUTH).json() == {"queued": 2}
-    with psycopg.connect(settings.database_url, autocommit=True) as conn:
-        statuses = dict(conn.execute("SELECT title, status FROM documents").fetchall())
-    assert statuses == {"With PDF": "queued", "With link": "queued", "Nothing": "catalogued"}
-
-
-def test_not_zotero_hides_linked_papers(client, settings):
-    linked = _library_doc(settings, "From Zotero", "2024", "ready", [("task", "linked task")])
-    _library_doc(settings, "Uploaded", "2024", "ready", [("task", "other task")])
-    with psycopg.connect(settings.database_url, autocommit=True) as conn:
-        conn.execute("INSERT INTO zotero_links (document_id, zotero_key, library_version) VALUES (%s, 'K1', 1)", (linked,))
-    titles = lambda q: sorted(d["title"] for d in client.get(q, headers=AUTH).json())  # noqa: E731
-    assert titles("/api/documents?not_zotero=true") == ["Uploaded"]
-    assert titles("/api/documents?not_zotero=false") == ["From Zotero", "Uploaded"]
-    assert titles("/api/documents?source=zotero&not_zotero=true") == []
-    facets = client.get("/api/library/facets?not_zotero=true", headers=AUTH).json()
-    assert facets["total"] == 1 and facets["source"]["zotero"] == 0
 
 
 def test_playback_shows_the_chapter_and_progress_through_the_paper(client, settings):

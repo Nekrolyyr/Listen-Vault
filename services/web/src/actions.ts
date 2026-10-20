@@ -5,7 +5,7 @@ import { areaList } from "./areas";
 
 /** Re-running processing makes no sense while it runs or before it was queued. */
 export function notProcessed(doc: Doc): boolean {
-  return doc.status === "queued" || doc.status === "processing" || doc.status === "catalogued";
+  return doc.status === "queued" || doc.status === "processing";
 }
 
 export async function act(doc: Doc, action: string, done: () => void): Promise<void> {
@@ -22,9 +22,6 @@ export async function act(doc: Doc, action: string, done: () => void): Promise<v
     } else if (action === "rerun-start") {
       await api.rerun(doc.id, "start");
       toast("Processing starts over.");
-    } else if (action === "queue") {
-      await api.queue(doc.id);
-      toast("Queued for processing.");
     }
   } catch (e) {
     toast((e as Error).message, "error");

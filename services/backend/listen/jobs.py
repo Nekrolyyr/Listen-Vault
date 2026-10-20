@@ -37,7 +37,7 @@ def enqueue(conn: Connection, document_id: UUID | str, options: dict[str, Any] |
 
 def enqueue_library(conn: Connection, kind: str, options: dict[str, Any] | None = None,
                     user_id: int | None = None) -> int | None:
-    """Queue a job that is not about one document (e.g. a Zotero sync). Returns None if one is already open."""
+    """Queue a job that is not about one document (e.g. the nightly topic rebuild). Returns None if one is already open."""
     row = conn.execute(
         "INSERT INTO jobs (kind, options, user_id) SELECT %s, %s, %s WHERE NOT EXISTS "
         "(SELECT 1 FROM jobs WHERE kind = %s AND state IN ('queued', 'running')) RETURNING id",

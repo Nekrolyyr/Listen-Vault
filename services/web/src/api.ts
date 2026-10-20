@@ -50,8 +50,7 @@ export interface Doc {
   source_url: string | null;
   has_pdf: boolean;
   ocr_applied: boolean;
-  status: "catalogued" | "queued" | "processing" | "ready" | "failed";
-  from_zotero: boolean;
+  status: "queued" | "processing" | "ready" | "failed";
   error: string | null;
   duration_s: number | null;
   voice: string | null;
@@ -91,8 +90,7 @@ export interface Filters {
   term: string[];
   yearFrom: number | null;
   yearTo: number | null;
-  source: "pdf" | "url" | "zotero" | null;
-  notZotero: boolean;
+  source: "pdf" | "url" | null;
   listened: boolean | null;
   status: Doc["status"] | null;
   area: string | null;
@@ -100,7 +98,7 @@ export interface Filters {
 }
 
 export const NO_FILTERS: Filters = {
-  term: [], yearFrom: null, yearTo: null, source: null, notZotero: false, listened: null, status: null,
+  term: [], yearFrom: null, yearTo: null, source: null, listened: null, status: null,
   area: null, topic: null,
 };
 
@@ -110,7 +108,7 @@ export interface Facets {
   listened_audio_s: number;
   status: Record<string, number>;
   listened: Record<"true" | "false", number>;
-  source: Record<"pdf" | "url" | "zotero", number>;
+  source: Record<"pdf" | "url", number>;
   years: { year: number; count: number }[];
   year_bounds: [number, number] | null; // the whole library, so the slider does not move with the filters
   terms: Record<KeywordKind, { term: string; count: number }[]>;
@@ -163,7 +161,6 @@ export interface AreaTile {
 export interface Overview {
   papers: number;
   unread: number;
-  not_processed: number;
   failed: number;
   audio_s: number;
   unplaced: number;
@@ -293,13 +290,6 @@ export interface Settings {
   engines: string[];
 }
 
-export interface ZoteroStatus {
-  configured: boolean;
-  last_synced_at: string | null;
-  last_error: string | null;
-  catalogued: number;
-  syncing: boolean;
-}
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -315,7 +305,6 @@ export function filterQuery(f: Filters): string {
   for (const t of f.term) p.append("term", t);
   if (f.yearFrom !== null) p.set("year_from", String(f.yearFrom));
   if (f.yearTo !== null) p.set("year_to", String(f.yearTo));
-  if (f.notZotero) p.set("not_zotero", "true");
   if (f.source) p.set("source", f.source);
   if (f.listened !== null) p.set("listened", String(f.listened));
   if (f.status) p.set("status", f.status);
@@ -392,13 +381,9 @@ export const api = {
   savePlayback: (id: string, p: Playback, keepalive = false) =>
     request<{ ok: boolean }>("PUT", `/api/documents/${id}/playback`, p, keepalive),
   backfillKeywords: () => request<{ queued: number }>("POST", "/api/library/keywords/backfill"),
-  queue: (id: string) => request<Doc>("POST", `/api/documents/${id}/queue`),
   questions: (id: string) => request<Question[]>("GET", `/api/documents/${id}/questions`),
   related: (id: string) => request<{ papers: RelatedPaper[] }>("GET", `/api/documents/${id}/related`),
   ask: (id: string, question: string) => request<Question>("POST", `/api/documents/${id}/questions`, { question }),
-  zotero: () => request<ZoteroStatus>("GET", "/api/zotero"),
-  zoteroSync: () => request<{ queued: boolean }>("POST", "/api/zotero/sync"),
-  zoteroQueueAll: () => request<{ queued: number }>("POST", "/api/zotero/queue-all"),
   settings: () => request<Settings>("GET", "/api/settings"),
   saveSettings: (changes: Partial<Settings["values"]>) => request<Settings>("PUT", "/api/settings", changes),
   me: () => request<Me>("GET", "/api/me"),

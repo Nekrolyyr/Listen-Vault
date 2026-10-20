@@ -179,9 +179,6 @@ def test_each_user_has_a_few_papers_waiting_at_most(make_client, settings):
 
 def test_library_wide_actions_are_for_administrators(make_client):
     ann = make_client("ann@example.org")
-    assert ann.get("/api/zotero", headers=AUTH).status_code == 403
-    assert ann.post("/api/zotero/sync", headers=AUTH).status_code == 403
-    assert ann.post("/api/zotero/queue-all", headers=AUTH).status_code == 403
     assert ann.post("/api/library/classify", headers=AUTH).status_code == 403
     assert ann.post("/api/library/topics/rebuild", headers=AUTH).status_code == 403
     assert ann.post("/api/library/keywords/backfill", headers=AUTH).status_code == 403

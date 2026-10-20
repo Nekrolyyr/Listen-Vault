@@ -6,7 +6,6 @@ export const STATUSES = [
   ["", "All"],
   ["unread", "Unread"],
   ["listened", "Listened"],
-  ["not_processed", "Not processed"],
   ["failed", "Failed"],
 ] as const;
 
@@ -65,9 +64,8 @@ export function toFilters(q: ListQuery, fixed: Partial<Filters> = {}): Filters {
   const f: Filters = { ...NO_FILTERS, term: [...q.terms] };
   if (q.status === "unread") f.listened = false;
   else if (q.status === "listened") f.listened = true;
-  else if (q.status === "not_processed") f.status = "catalogued";
   else if (q.status === "failed") f.status = "failed";
-  if (q.source === "pdf" || q.source === "url" || q.source === "zotero") f.source = q.source;
+  if (q.source === "pdf" || q.source === "url") f.source = q.source;
   if (q.area) f.area = q.area;
   if (q.topic) f.topic = Number(q.topic);
   if (q.from) f.yearFrom = Number(q.from);

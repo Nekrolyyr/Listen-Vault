@@ -7,7 +7,7 @@ import socket
 import time
 from uuid import UUID
 
-from .. import config, db, jobs, zotero
+from .. import config, db, jobs
 from ..storage import DocPaths
 from . import classify, qa, topics
 from .fetch import FetchError
@@ -70,14 +70,6 @@ class Worker:
         return True
 
     def _library_job(self, job) -> None:
-        if job["kind"] == "zotero_sync":
-            if job["user_id"] is None:  # queued by an administrator; without one there is no library to fill
-                raise PipelineError("The Zotero sync was queued without an administrator")
-            try:
-                zotero.sync(self.pool, self.settings, job["user_id"])
-            except zotero.ZoteroError as e:  # recorded in zotero_state.last_error; the next sync tries again
-                log.warning("zotero sync failed: %s", e)
-            return
         if job["kind"] == "qa":
             qa.run(self.pool, self.settings, self.pipeline.llm, job)
             return
@@ -94,12 +86,6 @@ class Worker:
         with self.pool.connection() as conn:
             retry = jobs.fail(conn, job, message, retryable)
         log.warning("job %s %s: %s", job["id"], "will be retried" if retry else "failed", message)
-
-    def schedule(self) -> None:
-        """Queue the periodic library jobs (the Zotero sync), unless one is already waiting or running."""
-        with self.pool.connection() as conn, conn.transaction():
-            if self.settings.zotero_configured:
-                jobs.enqueue_library(conn, "zotero_sync")
 
     def schedule_areas(self) -> None:
         """Place papers that have no research area yet (new imports, new uploads)."""
@@ -127,17 +113,12 @@ class Worker:
 
     def loop(self) -> None:
         last_sweep = 0.0
-        last_zotero: float | None = None
         last_areas: float | None = None
         while not self.stopping:
             if time.monotonic() - last_sweep > ORPHAN_SWEEP_S:
                 if n := self.sweep_orphans():
                     log.info("removed %d orphaned document folders", n)
                 last_sweep = time.monotonic()
-            if self.settings.zotero_configured and (
-                    last_zotero is None or time.monotonic() - last_zotero >= self.settings.zotero_sync_s):
-                last_zotero = time.monotonic()
-                self.schedule()
             if last_areas is None or time.monotonic() - last_areas >= AREAS_CHECK_S:
                 last_areas = time.monotonic()
                 self.schedule_areas()

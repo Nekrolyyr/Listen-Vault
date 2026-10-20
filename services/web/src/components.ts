@@ -33,7 +33,6 @@ export function openable(doc: Doc): boolean {
 
 export function statusOf(doc: Doc): Status {
   const job = doc.job;
-  if (doc.status === "catalogued") return { label: "Not processed", tone: "idle", progress: null };
   if (doc.status === "failed") return { label: "Failed", tone: "bad", progress: null, detail: doc.error ?? undefined };
   if (doc.status === "queued") {
     return { label: "Queued", tone: "wait", progress: null, detail: job?.error ? `Retrying soon: ${job.error}` : undefined };
@@ -113,9 +112,7 @@ export function paperRow(doc: Doc, reload: () => void): HTMLElement {
     : null;
 
   let primary: HTMLElement | null = null;
-  if (s.tone === "idle" && doc.status === "catalogued") {
-    primary = h("button", { type: "button", class: "btn small primary", onclick: () => act(doc, "queue", reload) }, "Queue");
-  } else if (doc.status === "failed") {
+  if (doc.status === "failed") {
     primary = h("button", { type: "button", class: "btn small", onclick: () => act(doc, "rerun-start", reload) }, "Retry");
   } else if (canOpen) {
     const resume = !!doc.playback && !doc.listened;

@@ -33,9 +33,8 @@ def database_url():
 @pytest.fixture
 def clean_db(database_url):
     with psycopg.connect(database_url, autocommit=True) as conn:
-        conn.execute("TRUNCATE documents, chapters, sentences, jobs, playback, settings, zotero_links, "
+        conn.execute("TRUNCATE documents, chapters, sentences, jobs, playback, settings, "
                      "document_keywords, users, admin_audit, auth_attempts, terms_versions RESTART IDENTITY CASCADE")
-        conn.execute("UPDATE zotero_state SET last_version = 0, last_synced_at = NULL, last_error = NULL")
     return database_url
 
 

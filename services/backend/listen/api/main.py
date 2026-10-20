@@ -51,7 +51,6 @@ SELECT d.*, le.listened, le.last_listened_at,
        (SELECT c.title FROM chapters c WHERE c.document_id = d.id AND c.idx = p.chapter_idx) AS play_chapter_title,
        (SELECT coalesce(sum(c.duration_s), 0) FROM chapters c
           WHERE c.document_id = d.id AND c.idx < p.chapter_idx) AS play_before_s,
-       (z.document_id IS NOT NULL) AS from_zotero,
        (SELECT coalesce(array_agg(t.term ORDER BY t.weight DESC), '{}') FROM (
             SELECT k.term, k.weight FROM document_keywords k
             WHERE k.document_id = d.id AND k.kind IN ('task', 'method', 'topic')
@@ -64,7 +63,6 @@ FROM documents d
 JOIN library_entries le ON le.document_id = d.id AND le.user_id = %(uid)s
 LEFT JOIN LATERAL (SELECT * FROM jobs WHERE document_id = d.id ORDER BY id DESC LIMIT 1) j ON true
 LEFT JOIN playback p ON p.document_id = d.id AND p.user_id = %(uid)s
-LEFT JOIN zotero_links z ON z.document_id = d.id
 LEFT JOIN document_areas ar ON ar.document_id = d.id
 """
 SORTS = {
@@ -78,10 +76,9 @@ def parse_filters(
     term: list[str] = Query(default=[], max_length=20),
     year_from: int | None = Query(default=None, ge=1000, le=2999),
     year_to: int | None = Query(default=None, ge=1000, le=2999),
-    source: str | None = Query(default=None, pattern=r"^(pdf|url|zotero)$"),
-    not_zotero: bool = False,
+    source: str | None = Query(default=None, pattern=r"^(pdf|url)$"),
     listened: bool | None = None,
-    status: str | None = Query(default=None, pattern=r"^(catalogued|queued|processing|ready|failed)$"),
+    status: str | None = Query(default=None, pattern=r"^(queued|processing|ready|failed)$"),
     area: str | None = Query(default=None, pattern=r"^[a-z_]{2,20}$"),
     topic: int | None = Query(default=None, ge=1),
 ) -> dict[str, Any]:
@@ -89,7 +86,7 @@ def parse_filters(
     Years are inclusive; a paper without a publication year is outside any year range. An area matches the
     primary and the other areas of a paper; a topic matches the papers on it."""
     return {"term": [t.strip().lower() for t in term if t.strip()][:20], "year_from": year_from,
-            "year_to": year_to, "source": source, "not_zotero": not_zotero, "listened": listened, "status": status,
+            "year_to": year_to, "source": source, "listened": listened, "status": status,
             "area": area, "topic": topic}
 
 
@@ -108,11 +105,7 @@ def filter_sql(f: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         if f["year_to"] is not None:
             clauses.append(f"{year} <= %(year_to)s")
             params["year_to"] = f["year_to"]
-    if f["not_zotero"]:
-        clauses.append("NOT EXISTS (SELECT 1 FROM zotero_links z WHERE z.document_id = d.id)")
-    if f["source"] == "zotero":
-        clauses.append("EXISTS (SELECT 1 FROM zotero_links z WHERE z.document_id = d.id)")
-    elif f["source"] in ("pdf", "url"):
+    if f["source"] in ("pdf", "url"):
         clauses.append("d.source_type = %(source)s")
         params["source"] = f["source"]
     if f["listened"] is not None:
@@ -203,7 +196,6 @@ def _doc_out(r: dict[str, Any]) -> dict[str, Any]:
         out["chapters_total"] = r["chapter_count"]
         out["chapters_ready"] = r["ready_count"]
         out["playback"] = None if r["play_chapter"] is None else _playback_out(r)
-        out["from_zotero"] = r["from_zotero"]
     return out
 
 
@@ -336,16 +328,13 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
             for r in terms:
                 if len(by_kind[r["kind"]]) < 40:
                     by_kind[r["kind"]].append({"term": r["term"], "count": r["n"]})
-            zotero_docs = conn.execute(
-                f"SELECT count(*) AS n FROM {LIB_FROM} WHERE EXISTS (SELECT 1 FROM zotero_links z "
-                f"WHERE z.document_id = d.id) AND TRUE{clause}", params).fetchone()["n"]
             return {
                 "total": totals["n"],
                 "audio_s": totals["audio"],
                 "listened_audio_s": totals["listened_audio"],
                 "status": count_by("d.status"),
                 "listened": {str(k).lower(): v for k, v in count_by("le.listened").items()},
-                "source": {**count_by("d.source_type"), "zotero": zotero_docs},
+                "source": count_by("d.source_type"),
                 "years": [{"year": int(y), "count": n}
                           for y, n in sorted(count_by("substring(d.published from '[0-9]{4}')").items())],
                 "year_bounds": library_year_bounds(conn, params["uid"]),
@@ -359,7 +348,6 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
         with pool(request).connection() as conn:
             totals = conn.execute(
                 "SELECT count(*) AS papers, count(*) FILTER (WHERE NOT le.listened) AS unread, "
-                "count(*) FILTER (WHERE d.status = 'catalogued') AS not_processed, "
                 "count(*) FILTER (WHERE d.status = 'failed') AS failed, coalesce(sum(d.duration_s), 0) AS audio_s "
                 f"FROM {LIB_FROM}", {"uid": user_id}).fetchone()
             unplaced = conn.execute(
@@ -398,7 +386,7 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
                 "topics": topics_by_area.get(area_id, [])[:3],
             })
         return {
-            "papers": totals["papers"], "unread": totals["unread"], "not_processed": totals["not_processed"],
+            "papers": totals["papers"], "unread": totals["unread"],
             "failed": totals["failed"], "audio_s": totals["audio_s"], "unplaced": unplaced, "areas": out_areas,
             "attention": [{"id": str(r["id"]), "title": r["title"] or "Untitled", "status": r["status"],
                            "reason": "failed" if r["status"] == "failed" else
@@ -730,57 +718,6 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
                 (doc_id, body.question.strip(), uid(request))).fetchone()
             jobs.enqueue_question(conn, doc_id, question["id"], uid(request))
         return _question_out(question)
-
-    @app.post("/api/documents/{doc_id}/queue", status_code=202)
-    def queue_document(request: Request, doc_id: UUID):
-        """Start processing a catalogued item (a Zotero entry that is not queued yet)."""
-        with pool(request).connection() as conn, conn.transaction():
-            row = get_doc(conn, doc_id, uid(request))
-            if row["status"] != "catalogued":
-                raise HTTPException(409, "This item is already queued or processed")
-            if not (row["source_type"] == "pdf" or row["source_url"]):
-                raise HTTPException(422, "This item has no PDF or link in Zotero to process")
-            require_job_room(conn, user_of(request))
-            jobs.enqueue(conn, doc_id, user_id=uid(request))
-            return _doc_out(get_doc(conn, doc_id, uid(request)))
-
-    # ------------------------------------------------------------------ Zotero (administrators, library-wide)
-    @app.get("/api/zotero")
-    def zotero_status(request: Request):
-        admin_only(request)
-        with pool(request).connection() as conn:
-            state = conn.execute("SELECT * FROM zotero_state WHERE id = 1").fetchone()
-            catalogued = conn.execute("SELECT count(*) AS n FROM documents WHERE status = 'catalogued'").fetchone()["n"]
-            syncing = conn.execute("SELECT 1 FROM jobs WHERE kind = 'zotero_sync' AND state IN ('queued', 'running')"
-                                   ).fetchone() is not None
-        return {
-            "configured": settings.zotero_configured,
-            "last_synced_at": state["last_synced_at"],
-            "last_error": state["last_error"],
-            "catalogued": catalogued,
-            "syncing": syncing,
-        }
-
-    @app.post("/api/zotero/queue-all", status_code=202)
-    def zotero_queue_all(request: Request):
-        """Start processing every catalogued item that has a PDF or a link. Only ever started by hand."""
-        admin_only(request)
-        with pool(request).connection() as conn, conn.transaction():
-            ids = [r["id"] for r in conn.execute(
-                "SELECT id FROM documents WHERE status = 'catalogued' AND (source_type = 'pdf' OR source_url IS NOT NULL) "
-                "ORDER BY title")]
-            for doc_id in ids:
-                jobs.enqueue(conn, doc_id, user_id=uid(request))
-        return {"queued": len(ids)}
-
-    @app.post("/api/zotero/sync", status_code=202)
-    def zotero_sync(request: Request):
-        admin_only(request)
-        if not settings.zotero_configured:
-            raise HTTPException(503, "Zotero is not configured: set ZOTERO_API_KEY in .env")
-        with pool(request).connection() as conn, conn.transaction():
-            job = jobs.enqueue_library(conn, "zotero_sync", user_id=uid(request))
-        return {"queued": job is not None}
 
     @app.post("/api/library/keywords/backfill", status_code=202)
     def backfill_keywords(request: Request):

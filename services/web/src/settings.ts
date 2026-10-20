@@ -133,63 +133,13 @@ export function settingsView(): View {
     }
   });
 
-  const zoteroBox = h("fieldset", { class: "zotero" }, h("legend", {}, "Zotero"), h("p", { class: "pane-message" }, "Loading…"));
-
-  async function loadZotero(): Promise<void> {
-    try {
-      const z = await api.zotero();
-      const sync = async () => {
-        try {
-          await api.zoteroSync();
-          toast("Sync started");
-        } catch (err) {
-          toast((err as Error).message, "error");
-        }
-        loadZotero();
-      };
-      zoteroBox.replaceChildren(
-        h("legend", {}, "Zotero"),
-        h(
-          "p",
-          { class: "hint" },
-          z.configured
-            ? `Every item of the library is imported and listed. Nothing is processed automatically. ${z.catalogued} listed, not processed.`
-            : "Not connected. Set ZOTERO_API_KEY in .env (create it at zotero.org/settings/keys), then restart the api and worker.",
-        ),
-        ...(z.last_synced_at ? [h("p", { class: "hint" }, `Last sync ${new Date(z.last_synced_at).toLocaleString()}`)] : []),
-        ...(z.last_error ? [h("p", { class: "hint" }, `Last sync failed: ${z.last_error}`)] : []),
-        h("button", { type: "button", class: "btn", disabled: !z.configured || z.syncing, onclick: sync },
-          z.syncing ? "Syncing…" : "Sync now"),
-        h("button", {
-          type: "button",
-          class: "btn",
-          disabled: !z.configured || z.catalogued === 0,
-          onclick: async () => {
-            if (!confirm(`Process ${z.catalogued} listed papers now? This downloads PDFs and runs the analysis on each.`)) return;
-            try {
-              const { queued } = await api.zoteroQueueAll();
-              toast(`${queued} papers queued for processing`);
-            } catch (err) {
-              toast((err as Error).message, "error");
-            }
-            loadZotero();
-          },
-        }, "Process all listed papers"),
-      );
-    } catch (e) {
-      zoteroBox.replaceChildren(h("legend", {}, "Zotero"), h("p", { class: "hint" }, (e as Error).message));
-    }
-  }
-
   api.settings().then(render, (e) => toast((e as Error).message, "error"));
-  if (session?.is_admin) loadZotero();
   return {
     el: h(
       "section",
       { class: "settings" },
       h("h1", {}, "Settings"),
       form,
-      session?.is_admin ? zoteroBox : null,
     ),
     title: "Settings",
   };

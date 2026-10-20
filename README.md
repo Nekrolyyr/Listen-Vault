@@ -81,7 +81,7 @@ Anyone can create an account on the sign-in page (unless an administrator closes
 
 **Administrators** (the Admin link) see the accounts with their counts (never the titles of papers), change
 quotas, disable accounts, make other administrators, sign out an account everywhere, close or open sign-up, and
-read a log of these changes. Library-wide maintenance (areas, topics, keywords, Zotero) is done by an
+read a log of these changes. Library-wide maintenance (areas, topics, keywords) is done by an
 administrator too.
 
 Operator commands, run from the folder that holds `docker-compose.yml`:
@@ -121,9 +121,6 @@ Operator commands, run from the folder that holds `docker-compose.yml`:
 - **Library:** the dashboard and filter column narrow the list. Groups, Graph and Timeline show related
   papers by their keywords. The Timeline shows a topic (or keyword) over the years. Topics are rebuilt from
   Settings.
-- **Zotero (optional, administrators):** set `ZOTERO_API_KEY` in `.env` (the numeric user ID is read from the key). Every
-  item is imported and listed, but nothing is processed automatically: queue a paper from the library, or
-  use "Process all listed papers" in Settings. PDFs need Zotero's file storage (not WebDAV).
 - **Upgrading an existing library:** "Process from scratch" gives a paper the abstract overview and the
   exact sentence positions on the PDF.
 
@@ -144,7 +141,6 @@ Every setting is in `.env` (see `.env.template` for the full list). Empty values
 | `MAX_UPLOAD_MB` | Largest upload (default 100) |
 | `LLM_GPU_LAYERS` | Language model layers on the NVIDIA GPU (default 99 = all, about 5.6 GB VRAM). Set 0 to run on CPU only. |
 | `LLM_THREADS`, `LLM_THREADS_BATCH`, `TTS_THREADS`, `OCR_JOBS` | CPU threads per task (default 8). Use your physical core count. |
-| `ZOTERO_*` | Optional Zotero import (see above) |
 
 Folders on the host:
 

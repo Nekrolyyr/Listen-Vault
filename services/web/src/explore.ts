@@ -28,7 +28,7 @@ export function exploreView(): View {
       const graph = await api.graph(NO_FILTERS);
       if (destroyed || tab !== "graph") return;
       panel.replaceChildren(
-        h("p", { class: "quiet" }, "Papers are linked when they share keywords. Only processed papers have keywords, so catalogued papers are not in the graph."),
+        h("p", { class: "quiet" }, "Papers are linked when they share keywords. Only processed papers have keywords, so papers still being processed are not in the graph."),
         graphView(graph, openDoc),
       );
     } catch (e) {

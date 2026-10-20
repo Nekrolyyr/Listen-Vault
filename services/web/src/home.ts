@@ -62,7 +62,6 @@ export function homeView(): View {
       { class: "strip", "aria-label": "Library at a glance" },
       stat("Papers", String(o.papers), "/papers"),
       stat("Unread", String(o.unread), "/papers?status=unread", o.unread ? "unread" : ""),
-      stat("Not processed", String(o.not_processed), "/papers?status=not_processed", o.not_processed ? "idle" : ""),
       stat("Failed", String(o.failed), "/papers?status=failed", o.failed ? "bad" : ""),
       stat("Hours of audio", hours, "/papers"),
     );

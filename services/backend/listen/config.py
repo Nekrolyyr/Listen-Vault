@@ -31,10 +31,6 @@ class Settings:
     grobid_wait_s: float = 180
     llm_wait_s: float = 300
     lexicon_path: Path = Path("/app/config/normalizer/lexicon.yaml")
-    # Zotero (optional): every item is catalogued; processing is always started by hand
-    zotero_user_id: str = ""      # optional: looked up from the API key when empty
-    zotero_api_key: str = ""
-    zotero_sync_s: float = 1800
     # Language model and the optimisation switches (docs/optimisation-plan.md)
     llm_format: str = "chatml"          # chatml (Qwen3) | raw (BLOOMZ)
     keywords_mode: str = "typed"        # typed (one schema call) | legacy (free-text questions)
@@ -61,9 +57,6 @@ class Settings:
     def smtp_configured(self) -> bool:
         return bool(self.smtp_host and self.smtp_from)
 
-    @property
-    def zotero_configured(self) -> bool:
-        return bool(self.zotero_api_key)
 
 
 def load() -> Settings:
@@ -90,9 +83,6 @@ def load() -> Settings:
         grobid_wait_s=float(env.get("GROBID_WAIT_S", "180")),
         llm_wait_s=float(env.get("LLM_WAIT_S", "300")),
         lexicon_path=Path(env.get("LEXICON_PATH", "/app/config/normalizer/lexicon.yaml")),
-        zotero_user_id=env.get("ZOTERO_USER_ID", "").strip(),
-        zotero_api_key=env.get("ZOTERO_API_KEY", "").strip(),
-        zotero_sync_s=float(env.get("ZOTERO_SYNC_MINUTES", "30")) * 60,
         llm_format=_choice(env, "LLM_FORMAT", "chatml", ("chatml", "raw")),
         keywords_mode=_choice(env, "KEYWORDS_MODE", "typed", ("typed", "legacy")),
         keyword_tagger=_flag(env, "KEYWORD_TAGGER", False),

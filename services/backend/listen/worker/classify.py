@@ -3,7 +3,7 @@
 BLOOMZ chooses a primary area and up to two more from the fixed list in listen/areas.py. The answer is held to
 that list by a JSON schema (llama.cpp grammar), so it cannot invent an area. The paper is described by its title,
 abstract, the keywords extracted from it, and its section headings when the full text was processed. Papers that
-are only catalogued from Zotero are classified from their metadata alone.
+have only metadata (no processed text) are classified from their metadata alone.
 
 Without the LLM, or when it fails, the cue words of listen/areas.py decide, and the placement is kept as "rules" so
 it is tried again later. A placement made by hand is pinned and is never changed by the job.

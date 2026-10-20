@@ -15,10 +15,6 @@ x-backend-env: &backend-env
   DATABASE_URL: postgresql://listen:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/listen
   DATA_DIR: /data
   TZ: ${TZ:-UTC}
-  ZOTERO_USER_ID: ${ZOTERO_USER_ID:-}
-  ZOTERO_API_KEY: ${ZOTERO_API_KEY:-}
-  ZOTERO_QUEUE_TAG: ${ZOTERO_QUEUE_TAG:-listen-queue}
-  ZOTERO_SYNC_MINUTES: ${ZOTERO_SYNC_MINUTES:-30}
 
 services:
   caddy:

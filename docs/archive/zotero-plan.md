@@ -1,3 +1,5 @@
+> Archived: the Zotero integration was removed (see docs/gaps-plan.md, phase 1). This plan is kept for reference only.
+
 # Zotero import: diagnosis and fix plan
 
 ## Symptom
