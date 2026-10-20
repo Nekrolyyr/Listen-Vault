@@ -150,6 +150,20 @@ def test_quota_counts_the_pages_of_your_library(make_client, settings, pdf):
     assert bea.get("/api/me", headers=AUTH).json()["quota"]["used"] == 0
 
 
+def test_the_page_quota_is_daily(make_client, settings, pdf):
+    ann = make_client("ann@example.org")
+    with db(settings) as conn:
+        conn.execute("UPDATE users SET page_quota = 2 WHERE email = 'ann@example.org'")
+    assert upload(ann, pdf, "one.pdf").status_code == 201  # 2 of 2 pages: the day's quota is used up
+    more = make_pdf(settings.data_dir.parent / "c.pdf", [[(14, "Other")], [(12, "x")]]).read_bytes()
+    assert upload(ann, more, "two.pdf").json()["detail"]["code"] == "quota_exceeded"
+    with db(settings) as conn:  # the paper was added more than a day ago
+        conn.execute("UPDATE library_entries SET added_at = now() - interval '25 hours' "
+                     "WHERE user_id = (SELECT id FROM users WHERE email = 'ann@example.org')")
+    assert ann.get("/api/me", headers=AUTH).json()["quota"] == {"used": 0, "quota": 2, "remaining": 2}
+    assert upload(ann, more, "two.pdf").status_code == 201
+
+
 def test_an_administrator_changes_the_quota_at_once(make_client, settings, pdf):
     admin = make_client("root@example.org", admin=True)
     ann = make_client("ann@example.org")

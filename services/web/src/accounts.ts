@@ -231,10 +231,10 @@ export function accountView(me: Me): View {
       crumbs(["Library", "/"], ["Account"]),
       h("h1", {}, "Account"),
       h("p", {}, me.email),
-      h("div", { class: "quota" }, bar(quota.quota ? quota.used / quota.quota : 0, `${quota.used} of ${quota.quota} pages used`)),
+      h("div", { class: "quota" }, bar(quota.quota ? quota.used / quota.quota : 0, `${quota.used} of ${quota.quota} pages used today`)),
       h("div", { class: "quota" }, bar(me.storage.quota ? me.storage.used / me.storage.quota : 0,
         `${formatBytes(me.storage.used)} of ${formatBytes(me.storage.quota)} storage used`)),
-      h("p", { class: "hint" }, "Each page of a paper in your library counts. Papers that other people also have count for you too; they are stored once."),
+      h("p", { class: "hint" }, "Each page of a paper you add counts against your daily quota for 24 hours, so the quota frees up again each day. This keeps the processing queue shared fairly."),
       h("p", { class: "hint" }, "Storage counts the PDF of each paper in your library and the audio made for you. When it is full, delete papers or audio to add more."),
       h("div", { class: "form-actions wrap" },
         h("a", { class: "btn", href: api.exportUrl, download: "listen-vault-export.zip" }, "Download my data"),
@@ -407,7 +407,7 @@ export function adminView(): View {
     });
     return h("div", { class: "table-wrap" },
       h("table", { class: "admin-table" },
-        h("thead", {}, h("tr", {}, h("th", {}, "Account"), h("th", {}, "Pages"), h("th", {}, "Papers"), h("th", {}, "Storage"), h("th", {}, "Page quota"), h("th", {}, "Storage limit"), h("th", {}, "Actions"))),
+        h("thead", {}, h("tr", {}, h("th", {}, "Account"), h("th", {}, "Pages"), h("th", {}, "Papers"), h("th", {}, "Storage"), h("th", {}, "Daily page quota"), h("th", {}, "Storage limit"), h("th", {}, "Actions"))),
         h("tbody", {}, ...rows)));
   }
 

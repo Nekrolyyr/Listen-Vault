@@ -40,7 +40,8 @@ def register_admin_routes(app: FastAPI, settings: config.Settings) -> None:
         with pool(request).connection() as conn:
             rows = conn.execute(
                 "SELECT u.id, u.email, u.is_admin, u.is_disabled, u.email_verified_at, u.page_quota, u.created_at, "
-                "u.last_login_at, coalesce(sum(d.pages), 0) AS pages_used, count(d.id) AS documents "
+                "u.last_login_at, coalesce(sum(d.pages) FILTER (WHERE le.added_at > now() - interval '24 hours'), 0) "
+                "AS pages_used, count(d.id) AS documents "
                 "FROM users u LEFT JOIN library_entries le ON le.user_id = u.id "
                 "LEFT JOIN documents d ON d.id = le.document_id "
                 "GROUP BY u.id ORDER BY u.created_at, u.id").fetchall()

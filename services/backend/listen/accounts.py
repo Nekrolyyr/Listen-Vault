@@ -245,9 +245,11 @@ def has_current_consent(conn: Connection, user_id: int, version: str | None) -> 
 # ---------------------------------------------------------------- quota
 
 def pages_used(conn: Connection, user_id: int) -> int:
+    """Pages of the papers the user added in the last 24 hours. The page quota is a daily allowance, so that one
+    user cannot fill the queue; it frees up as the papers added a day ago drop out of the count."""
     return int(conn.execute(
         "SELECT coalesce(sum(d.pages), 0) AS n FROM library_entries le JOIN documents d ON d.id = le.document_id "
-        "WHERE le.user_id = %s", (user_id,)).fetchone()["n"])
+        "WHERE le.user_id = %s AND le.added_at > now() - interval '24 hours'", (user_id,)).fetchone()["n"])
 
 
 def storage_status(conn: Connection, user_id: int) -> dict[str, int]:

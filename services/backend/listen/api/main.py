@@ -292,8 +292,8 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
         if status["used"] + pages > status["quota"]:
             raise HTTPException(403, {
                 "code": "quota_exceeded", "used": status["used"], "quota": status["quota"],
-                "message": f"Your page quota is full ({status['used']} of {status['quota']} pages). "
-                           "Remove papers or ask an administrator for more."})
+                "message": f"Your daily page quota is used up ({status['used']} of {status['quota']} pages in the last "
+                           "24 hours). It frees up as papers added more than a day ago drop out of the count."})
 
     # ------------------------------------------------------------------ health & session
     @app.get("/api/health")
