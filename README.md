@@ -5,7 +5,7 @@ by chapter, and plays the audio next to the PDF. It runs on your own computer wi
 
 The stack, all started by `docker compose`:
 
-- **caddy**: the login page (HTTP basic auth) and the only port, bound to `127.0.0.1`.
+- **caddy**: the only port, bound to `127.0.0.1`. It passes requests on to the api.
 - **api**: FastAPI and the web app.
 - **worker**: fetch, OCR, structure, chapters and speech.
 - **llm**: BLOOMZ-7b1 on llama.cpp, used for keywords, summaries and questions.
@@ -30,13 +30,12 @@ Run these from the project folder.
    ```sh
    scripts/init-secrets.sh
    ```
-   This copies `.env.template` to `.env`, generates `LISTEN_PROXY_SECRET` and `POSTGRES_PASSWORD`, sets
-   `LISTEN_USER` to your user name, and creates `data/` and `config/caddy/`. Open `.env` to change anything
-   else (the login name, the time zone, CPU threads).
+   This copies `.env.template` to `.env`, generates `LISTEN_PROXY_SECRET` and `POSTGRES_PASSWORD`, and
+   creates `data/`. Open `.env` to change anything else (the public address, mail, the time zone, CPU threads).
 
-2. **Set the login password** (see [Authentication](#authentication)):
+2. **Make the first administrator** (see [Accounts](#accounts)):
    ```sh
-   scripts/add-user.sh
+   scripts/make-admin.sh you@example.org
    ```
 
 3. **Download the models** (fills in whatever is missing in `./models`):
@@ -52,35 +51,55 @@ Run these from the project folder.
    ```
    The first build takes several minutes (web app, Python packages, ffmpeg and tesseract).
 
-5. **Open http://localhost:8080** and sign in with `LISTEN_USER` and the password from step 2.
+5. **Open http://localhost:8080** and sign in with the account from step 2. Other people can create their own
+   accounts from the sign-in page, unless you close sign-up in the administration page.
 
 If the folder contains another compose file named `compose.yaml`, Docker uses that one instead. In that
 case add `-f docker-compose.yml` to every `docker compose` command, for example
 `docker compose -f docker-compose.yml up -d --build`. The scripts already do this.
 
-## Authentication
+## Accounts
 
-The web app has a single user and no sign-up. Access works like this:
+Anyone can create an account on the sign-in page (unless an administrator closes sign-up). Each account has:
 
-- **Login:** the browser asks for a username and password (HTTP basic auth, checked by Caddy). The username
-  is `LISTEN_USER` in `.env`. The password is stored only as a bcrypt hash in `config/caddy/users.caddy`,
-  which `scripts/add-user.sh` writes. The password itself is never saved.
-- **Sign out:** there is no sign-out button, because basic auth has no logout. Your browser keeps the login
-  until you close the window or clear the site's data.
-- **Change the password:** run `scripts/add-user.sh` again, then `docker compose restart caddy`.
-- **Change the username:** set `LISTEN_USER` in `.env`, run `scripts/add-user.sh` again, then
-  `docker compose up -d && docker compose restart caddy`. The api only accepts the user named in `LISTEN_USER`.
-- **Internal check:** after Caddy has checked the login, it forwards the user name in a `Remote-User` header
-  and the shared `LISTEN_PROXY_SECRET` in an `X-Listen-Proxy` header. The api rejects every request without
-  both. Its state-changing requests also need an `X-Requested-With` header, which the web app sends. A
-  page on another site cannot set that header, so it cannot make your browser change anything.
-- **Network access:** port 8080 is bound to `127.0.0.1`, so only this computer can reach the app. The login
-  is plain HTTP. Do not publish the port on your network or the internet as it is. If you need remote
-  access, put your own HTTPS reverse proxy in front of it.
-- **Rotate the shared secret:** replace `LISTEN_PROXY_SECRET` in `.env` with a new random value, then run
-  `docker compose up -d`. Caddy and the api read it when they start.
+- **Sign-in:** email and password. Passwords are stored only as scrypt hashes. A session cookie keeps the
+  browser signed in for 30 days; **Sign out** on the account page ends it, and changing the password ends
+  the other sessions.
+- **Confirmation email:** if `SMTP_HOST` is set in `.env`, new accounts confirm their address by email before
+  they can sign in. Without it, accounts are confirmed at once, and the api logs a warning. For Infomaniak
+  mail: `SMTP_HOST=mail.infomaniak.com`, `SMTP_PORT=587`, and the mailbox address and its generated password.
+- **Terms of service:** the text is in `config/terms/` (one file per version). New accounts accept it when they
+  register, and everyone is asked again when a new version is published. The terms say that the operator can
+  read the PDFs uploaded (see [docs/multi-user-plan.md](docs/multi-user-plan.md) for the decisions behind them).
+  The text is a draft: have it reviewed, and replace the bracketed parts, before other people register.
+- **Page quota:** each account has a page quota (300 pages by default). The pages of the papers in its
+  library count against it. An administrator changes it in the administration page.
+- **Own library:** every account has its own library, listening progress and questions. A PDF that is added
+  by several people is stored once.
+- **Download or delete:** the account page downloads the library summary and PDFs as a zip, and deletes the
+  account. Papers that no other library holds are deleted with it.
 
-`.env`, `config/caddy/users.caddy`, `data/` and `models/` are git-ignored. Keep them private.
+**Administrators** (the Admin link) see the accounts with their counts (never the titles of papers), change
+quotas, disable accounts, make other administrators, sign out an account everywhere, close or open sign-up, and
+read a log of these changes. Library-wide maintenance (areas, topics, keywords, Zotero) is done by an
+administrator too.
+
+Operator commands, run from the folder that holds `docker-compose.yml`:
+
+| Command | What it does |
+|---|---|
+| `scripts/make-admin.sh you@example.org` | Makes an account an administrator (creates it if needed) and sets its password. The first account of an existing library is claimed this way. |
+| `docker compose exec api python -m listen.cli set-quota you@example.org 500` | Sets an account's page quota from the command line. |
+| `docker compose exec api python -m listen.cli dedup-existing` | Lists PDFs stored twice from before accounts existed; add `--apply` to merge them. |
+
+- **Internal check:** Caddy adds the shared `LISTEN_PROXY_SECRET` to every request, and the api rejects requests
+  without it, so only Caddy can reach the api. State-changing requests also need an `X-Requested-With` header,
+  which a page on another site cannot set.
+- **Network access:** port 8080 is bound to `127.0.0.1`. Do not publish it on your network or the internet as it
+  is: the connection is plain HTTP. For remote access, put your own HTTPS reverse proxy in front of it and set
+  `PUBLIC_URL` to its address.
+
+`.env`, `data/` and `models/` are git-ignored. Keep them private.
 
 ## Using the app
 
@@ -102,7 +121,7 @@ The web app has a single user and no sign-up. Access works like this:
 - **Library:** the dashboard and filter column narrow the list. Groups, Graph and Timeline show related
   papers by their keywords. The Timeline shows a topic (or keyword) over the years. Topics are rebuilt from
   Settings.
-- **Zotero (optional):** set `ZOTERO_API_KEY` in `.env` (the numeric user ID is read from the key). Every
+- **Zotero (optional, administrators):** set `ZOTERO_API_KEY` in `.env` (the numeric user ID is read from the key). Every
   item is imported and listed, but nothing is processed automatically: queue a paper from the library, or
   use "Process all listed papers" in Settings. PDFs need Zotero's file storage (not WebDAV).
 - **Upgrading an existing library:** "Process from scratch" gives a paper the abstract overview and the
@@ -118,7 +137,8 @@ Every setting is in `.env` (see `.env.template` for the full list). Empty values
 
 | Variable | Purpose |
 |---|---|
-| `LISTEN_USER` | Login name |
+| `PUBLIC_URL` | Address of the app, used in links in emails |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Mail for confirmation emails (see Accounts) |
 | `LISTEN_PORT` | Port on 127.0.0.1 (default 8080) |
 | `TZ` | Time zone for logs and timestamps (default UTC) |
 | `MAX_UPLOAD_MB` | Largest upload (default 100) |
@@ -134,7 +154,8 @@ Folders on the host:
 | `data/postgres/` | Database files |
 | `models/` | Model files (read-only in the containers) |
 | `config/normalizer/` | Pronunciation lexicon |
-| `config/caddy/` | `Caddyfile` and the login file written by `add-user.sh` |
+| `config/caddy/` | `Caddyfile` |
+| `config/terms/` | The terms of service, one file per version |
 
 ## Operations
 
