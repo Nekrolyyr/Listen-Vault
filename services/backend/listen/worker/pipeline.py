@@ -195,7 +195,7 @@ class Pipeline:
                 log.warning("could not count the pages of document %s", job["document_id"])
         with self.pool.connection() as conn:
             conn.execute(
-                f"""UPDATE documents SET
+                """UPDATE documents SET
                      title = CASE WHEN title = '' OR title = %(fn)s OR title = source_url THEN %(title)s ELSE title END,
                      authors = %(authors)s,
                      published = %(published)s,
