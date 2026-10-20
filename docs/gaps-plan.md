@@ -1,6 +1,6 @@
 # Plan: closing the gaps (Zotero removal, scheduled topics, per-user audio, storage quota, terms, onboarding)
 
-Status: plan, not started. Follows `docs/multi-user-plan.md` ("Known gaps"). Branch: `feature/multi-user`.
+Status: implemented on `feature/multi-user` (phases 1 to 6, see "Implementation status" at the end). Follows `docs/multi-user-plan.md` ("Known gaps"). Branch: `feature/multi-user`.
 Each phase ends with a commit as a checkpoint and a green test run.
 
 ## Decisions
@@ -262,3 +262,29 @@ or audio. The operator can change either limit.
 
 Questions about these terms or your data: **Akiba Zwick, adatech09@gmail.com**.
 ```
+
+## Implementation status
+
+Commits: `0c2f3d8` (phase 1, Zotero), `8077d17` (phase 2, topics and maintenance), `0cea1f7` (phase 3, per-user audio),
+`27d99ba` (phase 4, storage), `21d2957` (phase 5, terms), `0ee21c0` (phase 6, onboarding). Migrations 010 to 013.
+
+Tests: 232 passed, 2 skipped (backend). Web: type-check, build and the existing unit test pass.
+
+Deviations and limits, recorded here so they are not forgotten:
+
+- **Audio is made by a `narrate` job** queued for each user who adds a paper. It waits (every 30 seconds, without using an
+  attempt) while the paper is still processing. A text redo (OCR, structure or chapters) makes every holder's audio again.
+- **The storage limit is checked before each chapter.** A chapter that starts under the limit can take the user a little
+  over it. Links are refused only when storage is already full (their size is unknown until read).
+- **Storage is measured for files stored before phase 4** only by `python -m listen.cli measure-storage`. Run it once after
+  the upgrade, or the existing PDFs and audio count as 0 bytes.
+- **Regenerating audio** removes the user's old audio first; if the new audio stops (storage, failure), the user has the
+  chapters made so far.
+- **The terms (2026-10-21)** omit the per-user audio sentence and the age and rights rules, as the draft was edited.
+  The operator's name in the introduction is still a placeholder.
+- **Not done in this pass:** browser clicks through the onboarding and the admin Maintenance screens (only the terms and
+  tutorial screens were screenshotted at 390 px); a container smoke test of the upgraded image on a copy of the production
+  database; and the reuse of one narration between users with the same settings (recommended later).
+- **Production:** the live stack still runs the older code. Migrations 010 to 013 change the live database (Zotero
+  rows removed, audio moved to narrations, chapter audio columns dropped). Take `scripts/backup.sh` first.
+
