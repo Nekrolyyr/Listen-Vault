@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 270" role="img" aria-label="Voice and speed are yours, and storage shows how full your library is">
+<rect width="480" height="270" rx="16" fill="#efede7"/>
+
+<rect x="40" y="40" width="200" height="190" rx="14" fill="#ffffff" stroke="#dcd9d1" stroke-width="2"/>
+<circle cx="90" cy="100" r="28" fill="#2f5d50"/><circle cx="90" cy="100" r="10" fill="#ffffff"/>
+<rect x="132" y="90" width="90" height="10" rx="5" fill="#dcd9d1"/><rect x="132" y="110" width="60" height="8" rx="4" fill="#dcd9d1"/>
+<rect x="60" y="152" width="160" height="10" rx="5" fill="#dcd9d1"/><circle cx="120" cy="157" r="11" fill="#2f5d50"/>
+<rect x="60" y="184" width="160" height="10" rx="5" fill="#dcd9d1"/><circle cx="180" cy="189" r="11" fill="#2f5d50"/>
+<rect x="276" y="60" width="164" height="150" rx="14" fill="#ffffff" stroke="#dcd9d1" stroke-width="2"/>
+<path d="M294 110 h22 l 8 -12 v 40 l -8 -12 h-22 z" fill="#2f5d50"/>
+<path d="M336 104 q 10 12 0 24 M346 98 q 16 18 0 36" stroke="#2f5d50" stroke-width="4" fill="none" stroke-linecap="round"/>
+<rect x="294" y="160" width="128" height="12" rx="6" fill="#dcd9d1"/><rect x="294" y="160" width="78" height="12" rx="6" fill="#2f5d50"/>
+<rect x="294" y="182" width="128" height="8" rx="4" fill="#dcd9d1"/>
+
+</svg>

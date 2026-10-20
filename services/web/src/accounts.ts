@@ -6,7 +6,7 @@ import type { View } from "./main";
 import { go, session, setSession } from "./session";
 
 /** Terms and privacy text: "#" headings, "- " items, paragraphs. Only text is ever inserted. */
-function termsBlocks(text: string): HTMLElement[] {
+export function termsBlocks(text: string): HTMLElement[] {
   const blocks: HTMLElement[] = [];
   let list: HTMLElement | null = null;
   for (const raw of text.split("\n")) {
@@ -239,6 +239,18 @@ export function accountView(me: Me): View {
       h("div", { class: "form-actions wrap" },
         h("a", { class: "btn", href: api.exportUrl, download: "listen-vault-export.zip" }, "Download my data"),
         h("a", { class: "btn", href: "/terms", "data-link": true }, "Terms and privacy"),
+        h("button", {
+          type: "button", class: "btn",
+          onclick: async () => {
+            try {
+              await api.replayOnboarding();
+              if (session) session.onboarded = false;
+              go("/welcome", true);
+            } catch (err) {
+              toast((err as Error).message, "error");
+            }
+          },
+        }, "Show the tutorial again"),
         h("button", {
           type: "button", class: "btn",
           onclick: async () => {

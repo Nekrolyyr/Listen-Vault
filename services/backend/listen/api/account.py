@@ -55,6 +55,7 @@ def _me(conn, user: dict[str, Any], current: str | None) -> dict[str, Any]:
         "id": user["id"], "email": user["email"], "is_admin": user["is_admin"],
         "quota": accounts.quota_status(conn, user),
         "storage": accounts.storage_status(conn, user["id"]),
+        "onboarded": user.get("onboarded_at") is not None,
         "terms": {"current": current,
                   "accepted": accounts.has_current_consent(conn, user["id"], current)},
     }
@@ -186,6 +187,21 @@ def register_account_routes(app: FastAPI, settings: config.Settings) -> None:
             if body.version != accounts.current_terms(conn, settings.terms_dir):
                 raise HTTPException(409, "The terms have changed. Read the current version and accept it.")
             accounts.accept_terms(conn, user["id"], body.version)
+        return {"ok": True}
+
+    @app.post("/api/account/onboarded")
+    def finish_onboarding(request: Request):
+        user = user_of(request)
+        with pool(request).connection() as conn:
+            conn.execute("UPDATE users SET onboarded_at = COALESCE(onboarded_at, now()) WHERE id = %s", (user["id"],))
+        return {"ok": True}
+
+    @app.delete("/api/account/onboarded")
+    def replay_onboarding(request: Request):
+        """Show the tutorial again (from the account page)."""
+        user = user_of(request)
+        with pool(request).connection() as conn:
+            conn.execute("UPDATE users SET onboarded_at = NULL WHERE id = %s", (user["id"],))
         return {"ok": True}
 
     @app.get("/api/account/export")

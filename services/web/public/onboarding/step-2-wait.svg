@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 270" role="img" aria-label="Three steps done or underway: text, structure, audio">
+<rect width="480" height="270" rx="16" fill="#efede7"/>
+
+<g>
+<circle cx="90" cy="92" r="26" fill="#2f5d50"/><path d="M78 92 l9 9 l16 -18" stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round"/>
+<circle cx="200" cy="92" r="26" fill="#2f5d50"/><path d="M188 92 l9 9 l16 -18" stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round"/>
+<circle cx="310" cy="92" r="26" fill="#ffffff" stroke="#2f5d50" stroke-width="4"/><circle cx="310" cy="92" r="8" fill="#2f5d50"/>
+<circle cx="420" cy="92" r="26" fill="#ffffff" stroke="#dcd9d1" stroke-width="3"/>
+<rect x="64" y="136" width="352" height="12" rx="6" fill="#dcd9d1"/>
+<rect x="64" y="136" width="240" height="12" rx="6" fill="#2f5d50"/>
+</g>
+<g>
+<rect x="64" y="172" width="352" height="30" rx="8" fill="#ffffff"/><rect x="78" y="182" width="40" height="10" rx="5" fill="#2f5d50"/><rect x="330" y="182" width="72" height="10" rx="5" fill="#dce9e4"/>
+<rect x="64" y="210" width="352" height="30" rx="8" fill="#ffffff"/><rect x="78" y="220" width="130" height="10" rx="5" fill="#2f5d50"/><rect x="330" y="220" width="72" height="10" rx="5" fill="#dcd9d1"/>
+</g>
+
+</svg>

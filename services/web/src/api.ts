@@ -18,6 +18,7 @@ export interface Me {
   email: string;
   is_admin: boolean;
   quota: { used: number; quota: number; remaining: number };
+  onboarded: boolean;
   /** Bytes: the PDFs of the library and the user's audio, against the limit. */
   storage: { used: number; quota: number; remaining: number };
   terms: { current: string | null; accepted: boolean };
@@ -414,6 +415,8 @@ export const api = {
     request<{ ok: boolean }>("POST", "/api/auth/password", { current, new: next }),
   terms: () => request<{ version: string | null; text: string }>("GET", "/api/terms"),
   acceptTerms: (version: string) => request<{ ok: boolean }>("POST", "/api/terms/accept", { version }),
+  finishOnboarding: () => request<{ ok: boolean }>("POST", "/api/account/onboarded"),
+  replayOnboarding: () => request<{ ok: boolean }>("DELETE", "/api/account/onboarded"),
   deleteAccount: (password: string) => request<void>("DELETE", "/api/account", { password }),
   /** A link, not a request: the browser downloads the zip. */
   exportUrl: "/api/account/export",

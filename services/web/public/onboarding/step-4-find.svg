@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 270" role="img" aria-label="Areas on the map, topics and questions about a paper">
+<rect width="480" height="270" rx="16" fill="#efede7"/>
+
+<rect x="40" y="46" width="84" height="60" rx="10" fill="#2f5d50"/><rect x="136" y="46" width="84" height="60" rx="10" fill="#dce9e4"/><rect x="232" y="46" width="84" height="60" rx="10" fill="#ffffff"/><rect x="40" y="116" width="84" height="60" rx="10" fill="#dce9e4"/><rect x="136" y="116" width="84" height="60" rx="10" fill="#2f5d50"/><rect x="232" y="116" width="84" height="60" rx="10" fill="#ffffff"/>
+<g stroke="#5d646b" stroke-width="3"><line x1="330" y1="60" x2="390" y2="110"/><line x1="390" y1="110" x2="440" y2="70"/><line x1="390" y1="110" x2="410" y2="180"/></g>
+<circle cx="330" cy="60" r="11" fill="#2f5d50"/><circle cx="390" cy="110" r="13" fill="#2f5d50"/><circle cx="440" cy="70" r="10" fill="#ffffff" stroke="#2f5d50" stroke-width="3"/><circle cx="410" cy="180" r="11" fill="#dce9e4" stroke="#2f5d50" stroke-width="3"/>
+<path d="M300 210 h120 a10 10 0 0 1 10 10 v0 a10 10 0 0 1 -10 10 h-60 l-14 12 v-12 h-36 a10 10 0 0 1 -10 -10 v0 a10 10 0 0 1 10 -10 z" fill="#ffffff" stroke="#dcd9d1" stroke-width="2"/>
+<circle cx="330" cy="230" r="4" fill="#5d646b"/><circle cx="350" cy="230" r="4" fill="#5d646b"/><circle cx="370" cy="230" r="4" fill="#5d646b"/>
+
+</svg>

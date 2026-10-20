@@ -178,3 +178,12 @@ def test_a_failed_mail_does_not_create_the_account(app_for, settings, monkeypatc
         assert register(c).status_code == 503
     with psycopg.connect(settings.database_url, autocommit=True) as conn:
         assert conn.execute("SELECT count(*) FROM users").fetchone()[0] == 0
+
+
+def test_onboarding_is_shown_once_and_can_be_replayed(anon):
+    register(anon)
+    assert anon.get("/api/me", headers=AUTH).json()["onboarded"] is False
+    assert anon.post("/api/account/onboarded", headers=AUTH).status_code == 200
+    assert anon.get("/api/me", headers=AUTH).json()["onboarded"] is True
+    assert anon.delete("/api/account/onboarded", headers=AUTH).status_code == 200
+    assert anon.get("/api/me", headers=AUTH).json()["onboarded"] is False

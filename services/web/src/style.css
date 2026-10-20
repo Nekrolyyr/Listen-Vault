@@ -606,3 +606,26 @@ dialog.classifier::backdrop { background: rgb(0 0 0 / 35%); }
   .auth-page { padding: 24px 16px; }
   .auth-card { padding: 18px; }
 }
+
+/* Onboarding: welcome, terms, picture tutorial */
+.onboarding { width: min(100%, 560px); display: grid; gap: 18px; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.onboarding h1 { margin: 0; font-size: 26px; }
+.onboarding h2 { margin: 0; font-size: 20px; }
+.onboarding p { margin: 0; line-height: 1.55; }
+.onboarding-dots { display: flex; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.onboarding-dots li { width: 10px; height: 10px; border-radius: 50%; background: var(--border); }
+.onboarding-dots li.done { background: var(--accent-soft); }
+.onboarding-dots li.current { background: var(--accent); }
+.onboarding-step { display: grid; gap: 14px; }
+.onboarding-warning { padding: 10px 12px; border-radius: var(--radius); background: var(--accent-soft); }
+.onboarding-terms { max-height: 42vh; border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+.onboarding-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; align-items: center; }
+.onboarding-actions .quiet { margin-right: auto; }
+.tutorial-image { width: 100%; height: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+@media (max-width: 600px) {
+  .onboarding { padding: 16px; }
+  .onboarding h1 { font-size: 22px; }
+  .onboarding-actions { justify-content: stretch; }
+  .onboarding-actions .btn { flex: 1 1 auto; text-align: center; }
+  .onboarding-actions .quiet { margin-right: 0; }
+}

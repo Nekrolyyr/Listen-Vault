@@ -68,6 +68,8 @@ Anyone can create an account on the sign-in page (unless an administrator closes
 - **Confirmation email:** if `SMTP_HOST` is set in `.env`, new accounts confirm their address by email before
   they can sign in. Without it, accounts are confirmed at once, and the api logs a warning. For Infomaniak
   mail: `SMTP_HOST=mail.infomaniak.com`, `SMTP_PORT=587`, and the mailbox address and its generated password.
+- **First visit:** a new account is walked through a short tour once: what the app does, the terms of use (read
+  to the end and accept), and five picture steps. It can be shown again from the account page.
 - **Terms of service:** the text is in `config/terms/` (one file per version). New accounts accept it when they
   register, and everyone is asked again when a new version is published. The terms say that the operator can
   read the PDFs uploaded (see [docs/multi-user-plan.md](docs/multi-user-plan.md) for the decisions behind them).

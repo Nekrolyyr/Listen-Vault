@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 270" role="img" aria-label="A PDF and a web link arrive in the library">
+<rect width="480" height="270" rx="16" fill="#efede7"/>
+
+<rect x="40" y="50" width="110" height="150" rx="8" fill="#ffffff" stroke="#dcd9d1" stroke-width="2"/><rect x="54" y="80" width="82" height="6" rx="3" fill="#dcd9d1"/><rect x="54" y="94" width="68" height="6" rx="3" fill="#dcd9d1"/><rect x="54" y="108" width="54" height="6" rx="3" fill="#dcd9d1"/><rect x="54" y="122" width="82" height="6" rx="3" fill="#dcd9d1"/><rect x="54" y="136" width="68" height="6" rx="3" fill="#dcd9d1"/><rect x="54" y="150" width="54" height="6" rx="3" fill="#dcd9d1"/><rect x="54" y="164" width="82" height="6" rx="3" fill="#dcd9d1"/>
+<path d="M170 125 C 200 125, 210 125, 232 125" stroke="#2f5d50" stroke-width="4" fill="none" stroke-dasharray="8 8"/>
+<path d="M226 115 L240 125 L226 135" stroke="#2f5d50" stroke-width="4" fill="none"/>
+<rect x="250" y="60" width="190" height="150" rx="14" fill="#ffffff" stroke="#dcd9d1" stroke-width="2"/>
+<rect x="266" y="82" width="70" height="90" rx="6" fill="#2f5d50"/>
+<rect x="346" y="82" width="70" height="90" rx="6" fill="#dce9e4" stroke="#2f5d50" stroke-width="2"/>
+<rect x="266" y="184" width="150" height="8" rx="4" fill="#dcd9d1"/>
+<g transform="translate(330 22)" fill="none" stroke="#2f5d50" stroke-width="5" stroke-linecap="round">
+<path d="M14 22 l-6 6 a8 8 0 0 1 -11 -11 l8 -8"/><path d="M22 14 l6 -6 a8 8 0 0 1 11 11 l-8 8"/><path d="M13 23 l10 -10"/></g>
+<path d="M415 40 C 415 50, 400 50, 400 60" stroke="#5d646b" stroke-width="3" fill="none" stroke-dasharray="5 6"/>
+
+</svg>

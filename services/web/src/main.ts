@@ -8,6 +8,7 @@ import { homeView } from "./home";
 import { papersView } from "./papers";
 import { readerView } from "./reader";
 import { session, loadSession } from "./session";
+import { onboardingView } from "./onboarding";
 import { settingsView } from "./settings";
 import { topicView } from "./topic";
 
@@ -91,6 +92,15 @@ function render(): void {
     return;
   }
   if (!session) return navigate("/login", true);
+  if (path === "/welcome") {
+    current = onboardingView();
+    app.replaceChildren(h("main", { class: "auth-page" }, current.el));
+    document.title = "Welcome · Listen Vault";
+    window.scrollTo(0, 0);
+    return;
+  }
+  // the tour comes first; the terms and the account page stay open so nobody is stuck
+  if (!session.onboarded && path !== "/terms" && path !== "/account") return navigate("/welcome", true);
   if (path === "/admin" && !session.is_admin) return navigate("/", true);
   let view: View | null = null;
   let section: Section = "library";

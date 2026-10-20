@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 270" role="img" aria-label="The PDF highlights the sentence that is being read">
+<rect width="480" height="270" rx="16" fill="#efede7"/>
+
+<rect x="40" y="36" width="170" height="200" rx="8" fill="#ffffff" stroke="#dcd9d1" stroke-width="2"/><rect x="54" y="66" width="142" height="6" rx="3" fill="#dcd9d1"/><rect x="54" y="80" width="128" height="6" rx="3" fill="#dcd9d1"/><rect x="54" y="94" width="114" height="6" rx="3" fill="#dcd9d1"/><rect x="54" y="108" width="142" height="6" rx="3" fill="#dce9e4"/><rect x="54" y="122" width="128" height="6" rx="3" fill="#dcd9d1"/><rect x="54" y="136" width="114" height="6" rx="3" fill="#dcd9d1"/><rect x="54" y="150" width="142" height="6" rx="3" fill="#dcd9d1"/>
+<path d="M226 136 l40 0" stroke="#2f5d50" stroke-width="4" stroke-dasharray="6 6"/>
+<rect x="282" y="46" width="160" height="180" rx="14" fill="#ffffff" stroke="#dcd9d1" stroke-width="2"/>
+<circle cx="362" cy="124" r="30" fill="#2f5d50"/><path d="M354 108 L378 124 L354 140 Z" fill="#ffffff"/>
+<rect x="302" y="176" width="120" height="8" rx="4" fill="#dcd9d1"/><rect x="302" y="176" width="58" height="8" rx="4" fill="#2f5d50"/>
+<path d="M300 200 q 10 -8 20 0 t 20 0 t 20 0 t 20 0 t 20 0" stroke="#5d646b" stroke-width="3" fill="none"/>
+<path d="M300 202 q 10 8 20 0 t 20 0 t 20 0 t 20 0 t 20 0" stroke="#dcd9d1" stroke-width="3" fill="none"/>
+
+</svg>
