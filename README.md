@@ -51,7 +51,7 @@ Run these from the project folder.
    ```
    The first build takes several minutes (web app, Python packages, ffmpeg and tesseract).
 
-5. **Open http://localhost:8080** and sign in with the account from step 2. Other people can create their own
+5. **Open http://localhost:8073** and sign in with the account from step 2. Other people can create their own
    accounts from the sign-in page, unless you close sign-up in the administration page.
 
 If the folder contains another compose file named `compose.yaml`, Docker uses that one instead. In that
@@ -103,7 +103,7 @@ Operator commands, run from the folder that holds `docker-compose.yml`:
 - **Internal check:** Caddy adds the shared `LISTEN_PROXY_SECRET` to every request, and the api rejects requests
   without it, so only Caddy can reach the api. State-changing requests also need an `X-Requested-With` header,
   which a page on another site cannot set.
-- **Network access:** port 8080 is bound to `127.0.0.1`. Do not publish it on your network or the internet as it
+- **Network access:** port 8073 (`LISTEN_PORT`) is bound to `127.0.0.1`. Do not publish it on your network or the internet as it
   is: the connection is plain HTTP. For remote access, put your own HTTPS reverse proxy in front of it and set
   `PUBLIC_URL` to its address.
 
@@ -144,7 +144,7 @@ Every setting is in `.env` (see `.env.template` for the full list). Empty values
 |---|---|
 | `PUBLIC_URL` | Address of the app, used in links in emails |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Mail for confirmation emails (see Accounts) |
-| `LISTEN_PORT` | Port on 127.0.0.1 (default 8080) |
+| `LISTEN_PORT` | Port on 127.0.0.1 (default 8073; 8080 is often taken by other services) |
 | `TZ` | Time zone for logs and timestamps (default UTC) |
 | `MAX_UPLOAD_MB` | Largest upload (default 100) |
 | `LLM_GPU_LAYERS` | Language model layers on the NVIDIA GPU (default 99 = all, about 5.6 GB VRAM). Set 0 to run on CPU only. |
